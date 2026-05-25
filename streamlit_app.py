@@ -98,21 +98,53 @@ m2.metric("VIBRATION", f"{current_vib:.2f} mm/s")
 m3.metric("PRESSION", f"{current_pres:.2f} bar")
 m4.metric("COURANT", f"{current_cur:.1f} A")
 
-# ── Section 2 : Barre de Progression du RUL ──────────────────────────────────
+# ── Section 2 : Barre de Progression du RUL (Écrit en lignes ultra-courtes) ──
 st.markdown("---")
 jours_restants = current_rul / 24.0
 
 if current_rul <= RUL_TRIGGER:
-    status_text = "Critique (Moins d'un jour restant !)"
-    status_color = "#ef4444"
-    display_rul = f"{current_rul} h"
+    txt_status = "Critique (Moins d'un jour restant !)"
+    col_status = "#ef4444"
+    lbl_rul = f"{current_rul} h"
 elif current_rul <= RUL_WARN:
-    status_text = "Alerte (Maintenance sous 1 mois)"
-    status_color = "#f59e0b"
-    display_rul = f"{jours_restants:.1f} jours"
+    txt_status = "Alerte (Maintenance sous 1 mois)"
+    col_status = "#f59e0b"
+    lbl_rul = f"{jours_restants:.1f} jours"
 else:
-    status_text = "Nominal"
-    status_color = "#10b981"
-    display_rul = f"{jours_restants/30:.1f} mois"
+    txt_status = "Nominal"
+    col_status = "#10b981"
+    lbl_rul = f"{jours_restants/30:.1f} mois"
 
-st.markdown(f"#### Durée de vie résiduelle (RUL) <span
+# Découpage HTML pour empêcher GitHub de casser la ligne f-string
+html_title = f"#### Durée de vie résiduelle (RUL) "
+html_badge = f"<span style='float:right; color:{col_status};'>"
+html_content = f"<b>{lbl_rul}</b> <small style='color:gray;'>— {txt_status}</small></span>"
+
+st.markdown(html_title + html_badge + html_content, unsafe_allow_html=True)
+
+pct = (current_rul / RUL_MAX) * 100
+html_bar = f'<div style="width:100%; background-color:#e2e8f0; height:14px; border-radius:7px; overflow:hidden;">'
+html_fill = f'<div style="width:{pct}%; background-color:{col_status}; height:100%; transition: width 0.3s;"></div></div>'
+
+st.markdown(html_bar + html_fill, unsafe_allow_html=True)
+
+# ── Section 3 : Les 4 Graphiques Temporels Vivants ───────────────────────────
+def make_live_chart(title, y_data, color, suffix="", is_rul=False):
+    fig = go.Figure()
+    y_plot = [y / 24.0 for y in y_data] if is_rul else y_data
+    fig.add_trace(go.Scatter(x=st.session_state.history["time"], y=y_plot, mode='lines+markers', line=dict(color=color, width=2.5)))
+    current_label = f"{y_plot[-1]:.1f}{suffix}" if not is_rul else (f"{y_plot[-1]/30:.1f} mois" if y_plot[-1] > 30 else f"{y_plot[-1]:.1f} j")
+    fig.update_layout(
+        title=f"<b>{title}</b> — {current_label}", height=150,
+        margin=dict(l=15, r=15, t=35, b=15), plot_bgcolor='white', paper_bgcolor='white',
+        xaxis=dict(showgrid=True, gridcolor='#f1f5f9', showticklabels=False),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9')
+    )
+    return fig
+
+g1, g2 = st.columns(2)
+with g1:
+    st.plotly_chart(make_live_chart("Température", st.session_state.history["temp"], "#ef4444", "°C"), use_container_width=True)
+    st.plotly_chart(make_live_chart("Pression", st.session_state.history["pres"], "#3b82f6", " bar"), use_container_width=True)
+with g2:
+    st.plotly_chart(make_live_chart("Vibration", st.session_state.history["vib"], "#f59e0b", " mm/s"), use_container_width=True)
