@@ -111,4 +111,7 @@ else:
 
 # ── Top Metrics ─────────────────────────────────────────────────────────────
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("TEMPÉRATURE",
+m1.metric("TEMPÉRATURE", f"{c_temp:.1f} °C")
+m2.metric("VIBRATION", f"{c_vib:.1f} mm/s")
+m3.metric("PRESSION", f"{c_pres:.1f} bar")
+m4.metric("COURANT", f"{c_cur:.1f} A")
