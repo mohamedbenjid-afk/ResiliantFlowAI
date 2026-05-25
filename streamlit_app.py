@@ -2,11 +2,12 @@ import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
 import time
+from datetime import datetime
 
 # 1. Configuration de la page
 st.set_page_config(page_title="Pompe P-17 — Unité B", layout="wide")
 
-# Injection CSS pour les cartes de métriques
+# Injection CSS pour les cartes de métriques et le rapport d'agent
 st.markdown("""
     <style>
     div[data-testid="stMetric"] {
@@ -14,6 +15,13 @@ st.markdown("""
         border: 1px solid #e2e8f0 !important;
         padding: 15px 20px !important;
         border-radius: 8px !important;
+    }
+    .agent-box {
+        background-color: #fff5f5;
+        border-left: 5px solid #e53e3e;
+        padding: 20px;
+        border-radius: 4px;
+        margin-bottom: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -24,7 +32,6 @@ RUL_TRIGGER = 24
 WEIGHTS = {"temp": 0.35, "vib": 0.30, "pres": 0.20, "cur": 0.15}
 
 # ── Initialisation des Historiques (Session State) ───────────────────────────
-# On crée des listes pour stocker les 30 derniers points de chaque capteur
 if 'history' not in st.session_state:
     st.session_state.history = {
         "time": list(range(30)),
@@ -40,6 +47,46 @@ if 'base_cur' not in st.session_state: st.session_state.base_cur = 21.0
 if 'tick' not in st.session_state: st.session_state.tick = 434
 if 'running' not in st.session_state: st.session_state.running = True
 
+# NOUVEAU: Stockage du rapport de l'agent pour éviter la régénération à chaque frame
+if 'agent_report' not in st.session_state: st.session_state.agent_report = None
+if 'agent_triggered_at' not in st.session_state: st.session_state.agent_triggered_at = None
+
+# ── Fonction de l'Agent de Diagnostic ────────────────────────────────────────
+def run_diagnostic_agent(temp, vib, pres, cur, rul):
+    """Simule un agent d'IA analysant les causes de la dégradation de la RUL"""
+    triggers = []
+    actions = []
+    
+    if temp > 90:
+        triggers.append(f"Surchauffe thermique critique ({temp:.1f}°C)")
+        actions.append("- Vérifier le circuit de refroidissement de la pompe.\n- Contrôler la lubrification des paliers.")
+    if vib > 3.5:
+        triggers.append(f"Vibrations anormales sévères ({vib:.2f} mm/s)")
+        actions.append("- Inspecter d'urgence l'alignement de l'arbre.\n- Planifier une analyse fréquentielle des roulements.")
+    if pres > 6.5:
+        triggers.append(f"Surpression hydraulique ({pres:.2f} bar)")
+        actions.append("- Inspecter les vannes de refoulement.\n- Vérifier l'absence d'obstruction sur la ligne.")
+    if cur > 26.0:
+        triggers.append(f"Surcharge électrique du moteur ({cur:.1f} A)")
+        actions.append("- Contrôler l'isolation des enroulements moteurs.")
+
+    if not triggers:
+        triggers.append("Dégradation cumulative lente des paramètres physiques généraux.")
+        actions.append("- Planifier une inspection visuelle lors du prochain arrêt de maintenance.")
+
+    report = f"""
+    ### 🤖 Rapport Automatique de l'Agent de Maintenance
+    **Statut :** 🚨 Défaillance Imminente Suspectée (RUL < {RUL_TRIGGER}h)  
+    **Date de l'analyse :** `t = {st.session_state.tick}` | **RUL Diagnostiquée :** `{rul} heures`
+    
+    #### 🔍 Facteurs Déclencheurs Identifiés :
+    {"".join([f'* ' + t + '  \n' for t in triggers])}
+    
+    #### 🛠️ Plan d'Action Recommandé (Prioritaire) :
+    {"".join([a + '  \n' for a in actions])}
+    """
+    return report
+
 # ── Entête avec bouton Pause/Play ────────────────────────────────────────────
 top_left, top_mid, top_right = st.columns([3, 1, 2])
 with top_left:
@@ -54,13 +101,15 @@ with top_right:
         st.session_state.history = {"time": list(range(30)), "temp": [64.0]*30, "vib": [1.0]*30, "pres": [4.8]*30, "rul": [72.0]*30}
         st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 64.0, 1.0, 4.8, 21.0
         st.session_state.tick = 434
-        st.st.rerun()
+        st.session_state.agent_report = None
+        st.session_state.agent_triggered_at = None
+        st.rerun()
 
 # ── Évolution des données en temps réel ──────────────────────────────────────
 if st.session_state.running:
     st.session_state.tick += 1
     
-    # On ajoute un léger bruit aléatoire autour de la valeur de base demandée
+    # Ajout de bruit aléatoire
     current_temp = st.session_state.base_temp + np.random.uniform(-0.8, 0.8)
     current_vib = max(0.1, st.session_state.base_vib + np.random.uniform(-0.15, 0.15))
     current_pres = max(0.5, st.session_state.base_pres + np.random.uniform(-0.1, 0.1))
@@ -74,7 +123,7 @@ if st.session_state.running:
     stress = (dt * WEIGHTS["temp"] + dv * WEIGHTS["vib"] + dp * WEIGHTS["pres"] + dc * WEIGHTS["cur"])
     current_rul = max(0, round(RUL_MAX * (1 - stress ** 0.6)))
 
-    # On pousse les nouvelles valeurs dans l'historique et on retire le plus vieux point
+    # Mise à jour de l'historique
     st.session_state.history["time"].append(st.session_state.tick)
     st.session_state.history["temp"].append(current_temp)
     st.session_state.history["vib"].append(current_vib)
@@ -85,12 +134,23 @@ if st.session_state.running:
         if len(st.session_state.history[k]) > 30:
             st.session_state.history[k].pop(0)
 else:
-    # Si en pause, on prend le dernier point figé
     current_temp = st.session_state.history["temp"][-1]
     current_vib = st.session_state.history["vib"][-1]
     current_pres = st.session_state.history["pres"][-1]
     current_cur = st.session_state.base_cur
     current_rul = st.session_state.history["rul"][-1]
+
+# NOUVEAU: Déclenchement automatique de l'agent si RUL critique
+if current_rul <= RUL_TRIGGER:
+    # On génère le rapport si on change d'état critique ou s'il n'existe pas encore
+    if st.session_state.agent_report is None:
+        st.session_state.agent_report = run_diagnostic_agent(current_temp, current_vib, current_pres, current_cur, current_rul)
+        st.session_state.agent_triggered_at = st.session_state.tick
+else:
+    # Si le RUL redevient normal (ex: clic sur Nominal), on efface le rapport de l'agent
+    st.session_state.agent_report = None
+    st.session_state.agent_triggered_at = None
+
 
 # ── Section 1 : Métriques du haut ────────────────────────────────────────────
 m1, m2, m3, m4 = st.columns(4)
@@ -112,7 +172,25 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# ── Section 3 : Graphiques Temporels VIVANTS (Plot l'historique complet) ──────
+# ── Section NOUVEAU : Affichage du Rapport de l'Agent ─────────────────────────
+if st.session_state.agent_report is not None:
+    st.markdown(" ")
+    with st.container():
+        # Encadré visuel pour le rapport
+        st.markdown(f'<div class="agent-box">', unsafe_allow_html=True)
+        
+        # Organisation du rapport avec un bouton de rafraîchissement manuel au cas où
+        rep_col, btn_col = st.columns([5, 1])
+        with rep_col:
+            st.markdown(st.session_state.agent_report)
+        with btn_col:
+            if st.button("🔄 Ré-analyser", use_container_width=True):
+                st.session_state.agent_report = run_diagnostic_agent(current_temp, current_vib, current_pres, current_cur, current_rul)
+                st.rerun()
+                
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# ── Section 3 : Graphiques Temporels VIVANTS ──────────────────────────────────
 def make_live_chart(title, y_data, color, suffix=""):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=st.session_state.history["time"], y=y_data, mode='lines+markers', line=dict(color=color, width=2.5)))
@@ -146,7 +224,7 @@ if b4.button("Pression instable", use_container_width=True):
 if b5.button("🔥 Défaillance critique P-17", type="primary", use_container_width=True):
     st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 125.0, 6.2, 7.8, 31.5
 
-# ── Boucle de rafraîchissement automatique (Le moteur de l'animation) ────────
+# ── Boucle de rafraîchissement automatique ────────────────────────────────────
 if st.session_state.running:
-    time.sleep(1) # Attend 1 seconde
-    st.rerun()    # Relance l'application automatiquement
+    time.sleep(1) 
+    st.rerun()
