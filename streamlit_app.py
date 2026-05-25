@@ -1,166 +1,129 @@
-import streamlit as st
-import numpy as np
-import plotly.graph_objects as go
-import time
+# Mettez ce bloc juste après la section "Data Update" de votre code actuel
 
-# 1. Configuration de la page
-st.set_page_config(page_title="Dashboard Pompe P-17", layout="wide")
+# ── BARRE LATÉRALE : SÉLECTION DU PROFIL (Navigation) ───────────────────────
+st.sidebar.image("https://img.icons8.com/fluency/96/artificial-intelligence.png", width=60)
+st.sidebar.markdown("### ResilientFlow AI\n*Couche Prescriptive*")
 
-# ── Style CSS épuré et ajustements de compacité ──────────────────────────────
-st.markdown("""
-    <style>
-    .stApp { background-color: #ffffff; }
-    div[data-testid="stMetric"] {
-        background-color: #fcfcfc !important;
-        border: 1px solid #eeeeee !important;
-        padding: 8px 15px !important;
-        border-radius: 5px !important;
-    }
-    .threshold-label { color: #ef4444; font-size: 0.75rem; font-weight: bold; display: block; margin-top: -10px; margin-bottom: 5px; }
-    div.stButton > button { margin-bottom: 5px !important; }
-    </style>
-""", unsafe_allow_html=True)
+profil = st.sidebar.selectbox(
+    "👤 Connecté en tant que :",
+    ["🔧 Lionel (Terrain)", "📋 Sophie (Manager)", "📊 Antoine (Directeur)", "🛡️ Leila (HSE)"]
+)
 
-# ── Base de Connaissances ──────────────────────────────────────────────────
-KNOWLEDGE_BASE = {
-    "failures": {
-        "temp": {"label": "Surchauffe Moteur", "threshold": 110, "task": "PM-ELEC-04: Vérifier circuit de refroidissement."},
-        "vib": {"label": "Défaut Roulement", "threshold": 4.5, "task": "PM-MECH-12: Analyse vibratoire et graissage."},
-        "pres": {"label": "Cavitation", "threshold": 7.0, "task": "PM-HYD-08: Purge et vérification des vannes."},
-        "cur": {"label": "Surcharge Électrique", "threshold": 28, "task": "PM-ELEC-01: Contrôle intensité et isolement."}
-    }
-}
+st.sidebar.markdown("---")
+st.sidebar.caption(f"Statut pompe : P-17 (Unité B)")
+st.sidebar.caption(f"RUL actuel : {c_rul} heures")
 
-# ── Initialisation Session State ───────────────────────────────────────────
-if 'history' not in st.session_state:
-    st.session_state.history = {"time": list(range(30)), "temp": [67.0]*30, "vib": [0.8]*30, "pres": [4.4]*30, "rul": [72.0]*30}
-if 'base_temp' not in st.session_state: st.session_state.base_temp = 67.0
-if 'base_vib' not in st.session_state: st.session_state.base_vib = 0.8
-if 'base_pres' not in st.session_state: st.session_state.base_pres = 4.4
-if 'base_cur' not in st.session_state: st.session_state.base_cur = 20.7
-if 'tick' not in st.session_state: st.session_state.tick = 757
-if 'running' not in st.session_state: st.session_state.running = True
+# ── PROFIL 1 : LIONEL (Votre code actuel) ───────────────────────────────────
+if profil == "🔧 Lionel (Terrain)":
+    # Mettez ici TOUT votre code actuel : 
+    # Top Metrics, RUL Bar Section, Courbes de tendance, Injection manuelle et Scénarios.
+    st.info("💡 Mode Lionel actif : Visualisation des alertes et accès aux manuels GitHub.")
 
-# ── Header ──────────────────────────────────────────────────────────────────
-h1, h2, h3 = st.columns([3, 1, 1])
-with h1: st.markdown("### Pompe P-17 — Unité B")
-with h2: st.markdown(f"<p style='color:gray; padding-top:10px; font-family:monospace;'>t = {st.session_state.tick}</p>", unsafe_allow_html=True)
-with h3: 
-    if st.button("⏸️ Pause" if st.session_state.running else "▶️ En cours", use_container_width=True):
-        st.session_state.running = not st.session_state.running
 
-# ── Data Update ─────────────────────────────────────────────────────────────
-if st.session_state.running:
-    st.session_state.tick += 1
-    c_temp = st.session_state.base_temp + np.random.uniform(-0.5, 0.5)
-    c_vib = max(0.1, st.session_state.base_vib + np.random.uniform(-0.05, 0.05))
-    c_pres = max(0.1, st.session_state.base_pres + np.random.uniform(-0.05, 0.05))
-    c_cur = max(0.0, st.session_state.base_cur + np.random.uniform(-0.2, 0.2))
-
-    # Calcul RUL
-    stress = max(0, (c_temp-60)/50 * 0.4 + (c_vib/5) * 0.3 + (c_pres/8) * 0.3)
-    c_rul = max(0, int(72 * (1 - stress**1.2)))
-
-    # Update History
-    st.session_state.history["temp"].append(c_temp)
-    st.session_state.history["vib"].append(c_vib)
-    st.session_state.history["pres"].append(c_pres)
-    st.session_state.history["rul"].append(c_rul)
-    st.session_state.history["time"].append(st.session_state.tick)
-    for k in st.session_state.history:
-        if len(st.session_state.history[k]) > 30: st.session_state.history[k].pop(0)
-else:
-    c_temp = st.session_state.history["temp"][-1]
-    c_vib = st.session_state.history["vib"][-1]
-    c_pres = st.session_state.history["pres"][-1]
-    c_cur = st.session_state.base_cur
-    c_rul = st.session_state.history["rul"][-1]
-
-# ── Top Metrics ─────────────────────────────────────────────────────────────
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("TEMPÉRATURE", f"{c_temp:.1f} °C")
-m2.metric("VIBRATION", f"{c_vib:.1f} mm/s")
-m3.metric("PRESSION", f"{c_pres:.1f} bar")
-m4.metric("COURANT", f"{c_cur:.1f} A")
-
-# ── RUL Bar Section ─────────────────────────────────────────────────────────
-st.markdown("---")
-r_status = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
-
-col_left, col_right = st.columns([2, 1])
-with col_left:
-    st.markdown("**Durée de vie résiduelle (RUL)**")
-with col_right:
-    st.markdown(f"<p style='text-align: right; margin: 0;'><b>{c_rul} h</b> ({r_status})</p>", unsafe_allow_html=True)
-
-rul_percentage = float(max(0.0, min(1.0, c_rul / 72.0)))
-st.progress(rul_percentage)
-
-lbl1, lbl2, lbl3, lbl4 = st.columns([1, 1, 1, 1])
-lbl1.caption("0h")
-lbl2.caption("⚠️ Seuil agent : 24h")
-lbl3.caption("🔔 Alerte : 48h")
-lbl4.markdown("<p style='text-align: right; font-size: 0.8rem; color: gray; margin: 0;'>72h</p>", unsafe_allow_html=True)
-
-# ── NOTIFICATION AGENT (Placée en haut, ultra-visible) ──────────────────────
-if c_rul <= 24:
-    st.error("🚨 **ALERTE RESILIENTFLOW AI : DÉFAILLANCE CRITIQUE EN COURS**")
-    diag = []
-    if c_temp >= 110: diag.append(KNOWLEDGE_BASE["failures"]["temp"]["task"])
-    if c_vib >= 4.5: diag.append(KNOWLEDGE_BASE["failures"]["vib"]["task"])
-    if c_pres >= 7.0: diag.append(KNOWLEDGE_BASE["failures"]["pres"]["task"])
+# ── PROFIL 2 : SOPHIE (Manager Maintenance — US-S1, US-S2) ──────────────────
+elif profil == "📋 Sophie (Manager)":
+    st.markdown("### 📋 Espace Pilotage & Arbitrage — Sophie")
+    st.markdown("*Arbitrage priorisé des équipes, des pièces et des fenêtres d'arrêt.*")
     
-    if diag:
-        for d in diag: st.markdown(f"👉 **Plan requis :** {d}")
+    # Rappel de l'état critique si RUL <= 24
+    if c_rul <= 24:
+        st.error(f"🚨 **Urgence sur P-17 :** RUL critique ({c_rul}h). Une décision d'arbitrage est requise.")
+        
+        # US-S1 : Simulation d'impact / Report
+        st.markdown("#### 🔮 Simulateur d'impact de planification")
+        action = st.radio("Option de planification :", [
+            "🎯 Intervenir immédiatement (Arrêt planifié)",
+            "⏳ Repousser l'intervention à la fin de la semaine"
+        ])
+        
+        if action == "⏳ Repousser l'intervention à la fin de la semaine":
+            st.warning("⚠️ **Risque de casse : 87%** | Le RUL (Durée de vie résiduelle) sera épuisé avant la fenêtre demandée.")
+            st.error("📉 **Perte financière estimée : 47 000 €** (Calculé sur la base d'un arrêt subit en plein pic de production).")
+        else:
+            st.success("✅ **Impact maîtrisé :** Coût d'arrêt minimisé (Production basculée sur la ligne B2). Pertes évitées : 47 000 €.")
+            
+        # US-S2 : Affectation dynamique du technicien selon charge et habilitation
+        st.markdown("#### 👥 Affectation du personnel disponible")
+        # Données simulées issues de la US-02 (Contexte simulé)
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            st.info("**Lionel**\n\n• Habilitation : Mécanique / Hydraulique\n\n• Charge hebdo : 32h/40h\n\n✅ **Recommandé pour P-17**")
+            if st.button("Assigner Lionel", use_container_width=True):
+                st.success("Ordre de travail envoyé sur le terminal de Lionel avec accès au dépôt GitHub.")
+        with col_t2:
+            st.warning("**Marc D.**\n\n• Habilitation : Électricité / Automatisme\n\n• Charge hebdo : 39h/40h\n\n❌ Charge trop élevée")
     else:
-        st.markdown("👉 **Plan requis :** Usure combinée complexe. Inspection générale immédiate.")
-else:
-    st.success("🤖 **Agent ResilientFlow AI** : Surveillance active — Système nominal.")
+        st.success("✅ Toutes les machines de l'Unité B sont nominales. Aucune alerte en attente d'arbitrage.")
 
-st.markdown("---")
 
-# ── Architecture en 3 Colonnes (Évite d'avoir à scroller) ───────────────────
-main_col_charts, main_col_sliders, main_col_scenarios = st.columns([2, 1, 1])
-
-# --- COLONNE 1 : Les Graphiques (Condensés) ---
-with main_col_charts:
-    st.markdown("##### 📈 Courbes de tendance")
-    def plot_small(title, data, color, unit):
-        fig = go.Figure(go.Scatter(x=st.session_state.history["time"], y=data, mode='lines', line=dict(color=color, width=2.5)))
-        fig.update_layout(title=f"<b>{title}</b> ({data[-1]:.1f} {unit})", height=110, margin=dict(l=0,r=0,t=25,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(showgrid=True, gridcolor='#f1f1f1'))
-        return fig
-
-    st.plotly_chart(plot_small("Température", st.session_state.history["temp"], "#ef4444", "°C"), use_container_width=True)
-    st.plotly_chart(plot_small("Vibration", st.session_state.history["vib"], "#f59e0b", "mm/s"), use_container_width=True)
-    st.plotly_chart(plot_small("Pression", st.session_state.history["pres"], "#3b82f6", "bar"), use_container_width=True)
-
-# --- COLONNE 2 : Injection Manuelle (Alignement Vertical) ---
-with main_col_sliders:
-    st.markdown("##### ⌨️ Injection manuelle")
-    st.session_state.base_temp = st.slider("Température (°C)", 60, 140, int(st.session_state.base_temp), label_visibility="collapsed")
-    st.markdown("<span class='threshold-label'>Seuil : 110°C</span>", unsafe_allow_html=True)
+# ── PROFIL 3 : ANTOINE (Directeur Technique — US-A0, US-A2) ─────────────────
+elif profil == "📊 Antoine (Directeur)":
+    st.markdown("### 📊 Tableau de Bord Direction & ROI — Antoine")
+    st.markdown("*Vision consolidée des risques d'usine, du ROI de l'IA et des budgets d'investissement.*")
     
-    st.session_state.base_vib = st.slider("Vibration (mm/s)", 0.0, 8.0, float(st.session_state.base_vib), label_visibility="collapsed")
-    st.markdown("<span class='threshold-label'>Seuil : 4.5 mm/s</span>", unsafe_allow_html=True)
+    # US-A0 : Les 5 KPIs financiers et industriels clés (Chiffres du PPTX)
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("Pertes de production évitées", "312 000 €", delta="+14 alertes anticipées")
+    kpi2.metric("Disponibilité Globale (OEE)", "96.4 %", delta="+2.1 % vs Année N-1")
+    kpi3.metric("ROI Couche Prescriptive", "7.6 x", delta="Objectif target atteint")
+
+    st.markdown("---")
     
-    st.session_state.base_pres = st.slider("Pression (bar)", 0.0, 10.0, float(st.session_state.base_pres), label_visibility="collapsed")
-    st.markdown("<span class='threshold-label'>Seuil : 7.0 bar</span>", unsafe_allow_html=True)
+    # US-A2 : Simulateur de remplacement de l'équipement (Capex vs Opex)
+    st.markdown("#### 🔮 Analyse de cycle de vie et plan de remplacement (P-17)")
+    st.caption("L'analyse prescriptive croise l'historique d'usure pour conseiller la Direction sur le remplacement de l'actif.")
+    
+    col_an1, col_an2 = st.columns([1, 2])
+    with col_an1:
+        st.metric("Nombre de défaillances évitées", "4", help="Sur les 12 derniers mois")
+        st.markdown("**Diagnostic de l'actif :** La pompe P-17 arrive en fin de cycle technologique. Bien que l'IA prolonge sa vie, le coût des pièces augmente.")
+        choix_strategie = st.selectbox("Simuler une stratégie :", ["Conserver (Maintenance prescriptive)", "Remplacer par Modèle AlphaFlow-18"])
+    
+    with col_an2:
+        # Graphique dynamique pour le CODIR
+        fig_roi = go.Figure()
+        annees = ['En cours', 'Année +1', 'Année +2', 'Année +3']
+        if choix_strategie == "Conserver (Maintenance prescriptive)":
+            coûts = [10000, 25000, 48000, 75000]
+            fig_roi.add_trace(go.Scatter(x=annees, y=coûts, name="Coût de maintenance cumulé (Opex)", line=dict(color='#f59e0b', width=3)))
+            st.plotly_chart(fig_roi, use_container_width=True)
+            st.caption("🔴 Tendance : Augmentation des coûts de pièces détachées à partir de l'année +2.")
+        else:
+            coûts_remplacement = [80000, 83000, 86000, 89000]
+            fig_roi.add_trace(go.Scatter(x=annees, y=coûts_remplacement, name="Investissement Nouvel Équipement (Capex)", line=dict(color='#10b981', width=3)))
+            st.plotly_chart(fig_roi, use_container_width=True)
+            st.caption("🟢 Équilibre financier atteint en 18 mois grâce à la suppression totale des micro-arrêts.")
 
-# --- COLONNE 3 : Scénarios Rapides (Empilés Verticalement) ---
-with main_col_scenarios:
-    st.markdown("##### 🎭 Scénarios")
-    if st.button("✅ Mode Nominal", use_container_width=True): 
-        st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 67.0, 0.8, 4.4, 21
-    if st.button("🔥 Surchauffe Moteur", use_container_width=True): 
-        st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 115.0, 1.2, 4.5, 22
-    if st.button("⚙️ Roulement Dégradé", use_container_width=True): 
-        st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 75.0, 5.2, 4.4, 21
-    if st.button("💧 Pression Instable", use_container_width=True): 
-        st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 68.0, 1.0, 7.8, 21
-    if st.button("⚠️ Défaillance P-17", type="primary", use_container_width=True): 
-        st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 125.0, 6.5, 8.5, 32
 
-# Auto-refresh
-if st.session_state.running:
-    time.sleep(1)
-    st.rerun()
+# ── PROFIL 4 : LEILA (Responsable HSE — US-L1, US-L2) ────────────────────────
+elif profil == "🛡️ Leila (HSE)":
+    st.markdown("### 🛡️ Conformité Réglementaire & Sécurité HSE — Leila")
+    st.markdown("*Génération automatique des preuves de conformité, traçabilité des risques et audits ISO 45001.*")
+    
+    if c_rul <= 24:
+        st.warning("⚡ **Protocole de Sécurité Automatique déclenché (Alerte RUL < 24h)**")
+        
+        # US-L1 : Affichage dynamique des consignes de sécurité selon la nature du défaut détecté
+        st.markdown("#### 📋 Matrice des risques de l'intervention en cours")
+        
+        if c_temp >= 110:
+            st.markdown("🔴 **Risque Thermique Détecté (Surchauffe) :**")
+            st.markdown("- [ ] **EPI Obligatoire :** Gants isolants de catégorie III (norme EN 407).")
+            st.markdown("- [ ] **Procédure :** Attendre un refroidissement complet sous 45°C avant ouverture du carter.")
+        if c_vib >= 4.5:
+            st.markdown("🟠 **Risque Mécanique Détecté (Vibrations fortes) :**")
+            st.markdown("- [ ] **EPI Obligatoire :** Lunettes de protection anti-projections et protection acoustique.")
+            st.markdown("- [ ] **Procédure :** Vérification du serrage des boulons d'ancrage.")
+            
+        st.markdown("- [ ] **Consignation Électrique (LOTO) :** Sectionneur cadenassé en cellule basse tension.")
+    else:
+        st.success("🤖 Système nominal. Aucune procédure d'urgence active à valider.")
+        
+    st.markdown("---")
+    
+    # US-L2 : Génération de dossier d'audit ISO 45001
+    st.markdown("#### 📄 Registre de conformité et Rapport d'Audit ISO 45001")
+    st.write("Le système ResilientFlow AI enregistre chaque action prescriptive, prouvant qu'aucun technicien n'est envoyé sur une machine en panne sans ses EPI réglementaires.")
+    
+    if st.button("📥 Exporter le dossier d'audit réglementaire (12 derniers mois)"):
+        st.success("Le dossier de conformité `Rapport_ISO45001_Pompe_P17.pdf` a été généré avec succès. Horodatage blockchain d'usine validé.")
