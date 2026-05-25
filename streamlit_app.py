@@ -1,151 +1,116 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import time, json
-from datetime import datetime
+import time
 
-st.set_page_config(page_title="ResilientFlow AI — P-17", layout="wide")
+# Configuration de la page
+st.set_page_config(
+    page_title="ResilientFlow AI - Dashboard de Maintenance Prédictive",
+    page_icon="🏭",
+    layout="wide"
+)
 
-# ── Constantes ────────────────────────────────────────────────────────────────
-RUL_MAX = 72
-RUL_TRIGGER = 24   # Seuil déclenchement agent
-RUL_WARN = 48      # Seuil alerte
-WEIGHTS = {"temp": 0.35, "vib": 0.30, "pres": 0.20, "cur": 0.15}
+# Style CSS personnalisé pour donner un look moderne et industriel (comme la photo 2)
+st.markdown("""
+    <style>
+    .metric-card {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    .prescription-box {
+        background-color: #f0fdf4;
+        border-left: 5px solid #16a34a;
+        padding: 15px;
+        border-radius: 4px;
+        margin-bottom: 10px;
+    }
+    .prescription-box.optimal {
+        background-color: #eff6ff;
+        border-left: 5px solid #2563eb;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# ── Contexte simulé (le JSON de Mohamed) ─────────────────────────────────────
-CONTEXT = {
-    "equipement": "Pompe P-17 — Unité B",
-    "of_actif": "OF-2847",
-    "duree_of_restante_h": 52,
-    "equipe_dispo_dans_h": 48,
-    "pieces_stock": ["Joint JM-220 (B-12)", "Roulement 6205-2RS"],
-    "technicien_disponible": "Lionel"
-}
+st.title("🏭 ResilientFlow AI — Simulateur C-MAPSS")
+st.subheader("Suivi des indicateurs de dégradation et agent prescriptif en temps réel")
 
-# ── Calcul RUL ────────────────────────────────────────────────────────────────
-def compute_rul(temp, vib, pres, cur):
-    dt = max(0, (temp - 80) / (140 - 80))
-    dv = max(0, (vib  - 2.0) / (8 - 2.0))
-    dp = max(0, (pres - 5.5) / (10 - 5.5))
-    dc = max(0, (cur  - 22) / (40 - 22))
-    stress = (dt * WEIGHTS["temp"] + dv * WEIGHTS["vib"] +
-              dp * WEIGHTS["pres"] + dc * WEIGHTS["cur"])
-    return max(0, round(RUL_MAX * (1 - stress ** 0.6)))
+# Initialisation du Session State pour stocker les valeurs des capteurs
+if 'temp' not in st.session_state:
+    st.session_state.temp = 110.0
+    st.session_state.vib = 1.2
+    st.session_state.pres = 4.8
+    st.session_state.courant = 18.2
 
-# ── Prescriptions (moteur 3 scénarios) ───────────────────────────────────────
-def get_prescriptions(rul, context):
-    fenetre = context["equipe_dispo_dans_h"]
-    return [
-        {
-            "action": "Réduire cadence 20 %",
-            "rul_projete": min(RUL_MAX, round(rul * 2.8)),
-            "impact_of": "OF non interrompu",
-            "optimal": min(RUL_MAX, round(rul * 2.8)) >= fenetre
-        },
-        {
-            "action": "Réduire pression 15 %",
-            "rul_projete": min(RUL_MAX, round(rul * 1.9)),
-            "impact_of": "Débit réduit 15 %",
-            "optimal": False
-        },
-        {
-            "action": "Arrêt immédiat",
-            "rul_projete": 999,
-            "impact_of": "Production interrompue",
-            "optimal": False
-        },
-    ]
+# --- BARRE LATÉRALE DE CONTRÔLE & SIMULATION ---
+st.sidebar.header("🕹️ Contrôle de la Simulation")
 
-# ── UI ────────────────────────────────────────────────────────────────────────
-st.title("🏭 ResilientFlow AI — Simulateur P-17")
-st.caption("Couche prescriptive IoT/RUL — Use case fictif illustratif")
+# Bouton de défaillance critique immédiate
+if st.sidebar.button("🚨 Défaillance critique P-17", type="primary"):
+    st.session_state.temp = 125.0
+    st.session_state.vib = 6.2
+    st.session_state.pres = 7.8
+    st.session_state.courant = 31.5
 
-# Scénarios rapides
-col_s = st.columns(5)
-scenarios = {
-    "Nominal":      (72,  1.2, 4.8, 18.2),
-    "Surchauffe":   (118, 2.1, 5.1, 22.0),
-    "Vibration":    (85,  5.8, 4.9, 20.5),
-    "Pression":     (78,  1.8, 7.6, 19.0),
-    "Critique P-17":(125, 6.2, 7.8, 31.5),
-}
-selected = None
-for i, (name, vals) in enumerate(scenarios.items()):
-    if col_s[i].button(name, use_container_width=True):
-        selected = vals
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Ajustement manuel des capteurs :**")
+# Sliders pour ajuster manuellement en plus du mode automatique
+t_slider = st.sidebar.slider("Température (°C)", 90.0, 140.0, float(st.session_state.temp), 0.5)
+v_slider = st.sidebar.slider("Vibrations (mm/s)", 0.5, 8.0, float(st.session_state.vib), 0.1)
+p_slider = st.sidebar.slider("Pression (bar)", 2.0, 10.0, float(st.session_state.pres), 0.1)
+c_slider = st.sidebar.slider("Courant (A)", 10.0, 40.0, float(st.session_state.courant), 0.5)
 
-# Sliders injection manuelle
-with st.expander("Injection manuelle des valeurs capteurs", expanded=True):
-    c1, c2, c3, c4 = st.columns(4)
-    defaults = selected if selected else (
-        st.session_state.get("temp", 72),
-        st.session_state.get("vib", 1.2),
-        st.session_state.get("pres", 4.8),
-        st.session_state.get("cur", 18.2),
-    )
-    temp = c1.slider("Température (°C)  ⚠️ seuil 110°C",
-                     60.0, 140.0, float(defaults[0]), 0.5)
-    vib  = c2.slider("Vibration (mm/s)  ⚠️ seuil 4.5",
-                     0.5, 8.0, float(defaults[1]), 0.1)
-    pres = c3.slider("Pression (bar)  ⚠️ seuil 7.0",
-                     1.0, 10.0, float(defaults[2]), 0.1)
-    cur  = c4.slider("Courant (A)  ⚠️ seuil 28A",
-                     10.0, 40.0, float(defaults[3]), 0.2)
+# Prise en compte des valeurs ajustées
+st.session_state.temp = t_slider
+st.session_state.vib = v_slider
+st.session_state.pres = p_slider
+st.session_state.courant = c_slider
 
-# Calcul RUL
-rul = compute_rul(temp, vib, pres, cur)
+# --- LOGIQUE DU CALCUL DU RUL (Modèle non-linéaire) ---
+# 1. Calcul des scores de dégradation normalisés (0 = nominal, 1 = critique)
+def get_stress_score(val, nominal, critical):
+    score = (val - nominal) / (critical - nominal)
+    return max(0.0, min(float(score), 1.0)) # Reste coincé entre 0 et 1
 
-# KPIs
-st.divider()
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Température", f"{temp:.0f} °C",
-          delta="⚠️ SEUIL" if temp > 110 else None,
-          delta_color="inverse")
-k2.metric("Vibration",   f"{vib:.1f} mm/s",
-          delta="⚠️ SEUIL" if vib > 4.5 else None,
-          delta_color="inverse")
-k3.metric("Pression",    f"{pres:.1f} bar",
-          delta="⚠️" if pres > 7 else None,
-          delta_color="inverse")
-k4.metric("Courant",     f"{cur:.1f} A",
-          delta="⚠️" if cur > 28 else None,
-          delta_color="inverse")
-k5.metric("RUL estimé",  f"{rul} h",
-          delta="CRITIQUE" if rul <= RUL_TRIGGER else
-                "Alerte"   if rul <= RUL_WARN    else "Nominal",
-          delta_color="inverse" if rul <= RUL_WARN else "normal")
+s_temp = get_stress_score(st.session_state.temp, 110.0, 125.0)
+s_vib = get_stress_score(st.session_state.vib, 1.2, 4.5)
+s_pres = get_stress_score(st.session_state.pres, 4.8, 7.0)
+s_cour = get_stress_score(st.session_state.courant, 18.2, 28.0)
 
-# Barre RUL
-bar_color = "🔴" if rul <= RUL_TRIGGER else "🟡" if rul <= RUL_WARN else "🟢"
-st.progress(rul / RUL_MAX,
-            text=f"{bar_color} RUL = {rul}h / {RUL_MAX}h  "
-                 f"— Seuil agent : {RUL_TRIGGER}h")
+# 2. Combinaison pondérée du stress
+stress_total = (s_temp * 0.35) + (s_vib * 0.30) + (s_pres * 0.20) + (s_cour * 0.15)
 
-# ── Agent ─────────────────────────────────────────────────────────────────────
-st.divider()
-if rul <= RUL_TRIGGER:
-    st.error(f"## 🚨 Agent déclenché — RUL = {rul}h")
-    st.write(f"**Contexte :** OF `{CONTEXT['of_actif']}` actif encore "
-             f"{CONTEXT['duree_of_restante_h']}h · "
-             f"Équipe disponible dans {CONTEXT['equipe_dispo_dans_h']}h · "
-             f"Pièces en stock : {', '.join(CONTEXT['pieces_stock'])}")
+# 3. Formule mathématique du RUL (Exposant 0.6 pour l'accélération de l'usure)
+rul = 72.0 * (1.0 - (stress_total ** 0.6))
+rul = max(0.0, rul) # Pas de RUL négatif
 
-    st.write("**Prescriptions calculées :**")
-    prescs = get_prescriptions(rul, CONTEXT)
-    for p in prescs:
-        icon = "✅" if p["optimal"] else ("⚠️" if p["rul_projete"] >= RUL_WARN else "🛑")
-        label = " ← **Recommandé**" if p["optimal"] else ""
-        st.write(f"{icon} **{p['action']}** → RUL projeté : **{p['rul_projete']}h** "
-                 f"· {p['impact_of']}{label}")
+# --- AFFICHAGE PRINCIPAL (DASHBOARD) ---
 
-    if st.button("✅ Valider la prescription optimale", type="primary"):
-        st.success(f"Prescription validée par {CONTEXT['technicien_disponible']} "
-                   f"à {datetime.now().strftime('%H:%M:%S')} — "
-                   f"Ticket créé : OF-{CONTEXT['of_actif']}-MAINT")
+# Section 1 : Les Cartes de Métriques (Capteurs)
+col1, col2, col3, col4 = st.columns(4)
 
-elif rul <= RUL_WARN:
-    st.warning(f"⚠️ Alerte — RUL = {rul}h — Surveillance renforcée "
-               f"(seuil déclenchement : {RUL_TRIGGER}h)")
-else:
-    st.info("Agent en veille — RUL nominal")
+with col1:
+    color = "normal" if st.session_state.temp < 120 else "inverse"
+    st.metric("🌡️ Température", f"{st.session_state.temp:.1f} °C", delta=f"{st.session_state.temp - 110.0:.1f} °C vs nominal", delta_color=color)
+with col2:
+    color = "normal" if st.session_state.vib < 4.0 else "inverse"
+    st.metric("🫨 Vibrations", f"{st.session_state.vib:.2f} mm/s", delta=f"{st.session_state.vib - 1.2:.2f} mm/s vs nominal", delta_color=color)
+with col3:
+    color = "normal" if st.session_state.pres < 6.5 else "inverse"
+    st.metric("💧 Pression", f"{st.session_state.pres:.1f} bar", delta=f"{st.session_state.pres - 4.8:.1f} bar vs nominal", delta_color=color)
+with col4:
+    color = "normal" if st.session_state.courant < 25.0 else "inverse"
+    st.metric("⚡ Courant", f"{st.session_state.courant:.1f} A", delta=f"{st.session_state.courant - 18.2:.1f} A vs nominal", delta_color=color)
+
+st.markdown("---")
+
+# Section 2 : Jauge du RUL et Graphique de Dégradation
+left_col, right_col = st.columns([1, 2])
+
+with left_col:
+    st.subheader("⏱️ Durée de vie restante")
+    
+    # Couleur de la jauge selon l'urgence
+    gauge_color = "#ef4444" if
