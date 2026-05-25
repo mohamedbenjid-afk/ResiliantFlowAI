@@ -56,11 +56,8 @@ with top_right:
         st.session_state.tick = 434
         st.rerun()
 
-# ── Évolution des données en temps réel ──────────────────────────────────────
+# ── Évolution des données en temps réel (Lignes condensées pour éviter les SyntaxError) ──
 if st.session_state.running:
     st.session_state.tick += 1
     
-    # Injection du bruit blanc sur les capteurs
-    current_temp = st.session_state.base_temp + np.random.uniform(-0.8, 0.8)
-    current_vib = max(0.1, st.session_state.base_vib + np.random.uniform(-0.15, 0.15))
-    current_pres = max(0.5, st.session_state.base_pres + np.random.uniform(-0.1, 0
+    current_temp = st.session_state.base_temp + np.random.uniform(-0.8
