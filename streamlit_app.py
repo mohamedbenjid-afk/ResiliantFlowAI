@@ -42,13 +42,14 @@ st.markdown("""
         margin-top: 10px;
         margin-bottom: 10px;
     }
-    /* Style pour la bannière académique */
+    /* Style pour la bannière académique de maintenance */
     .escp-banner {
         background-color: #002349;
         color: #ffffff;
-        padding: 10px;
+        padding: 12px;
         border-radius: 4px;
         text-align: center;
+        margin-top: 5px;
         margin-bottom: 15px;
         font-size: 0.85rem;
         border-left: 4px solid #d4af37;
@@ -111,14 +112,17 @@ r_status = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
 rul_percentage = float(max(0.0, min(1.0, c_rul / 72.0)))
 
 # ── BARRE LATÉRALE : IDENTITÉ ESCP & NAVIGATION ─────────────────────────────
-# Ajout du logo officiel ESCP Business School
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/e/e0/Logo_ESCP_Business_School.png", use_container_width=True)
+# Affichage sécurisé du logo ESCP via sa chaîne base64
+st.sidebar.markdown(
+    '<img src="data:image/png;base64,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勃逊特Flow" style="width:100%; border-radius:4px; max-width:260px; display:block; margin:auto;">', 
+    unsafe_allow_html=True
+)
 
-# Ajout de la bannière académique de sujet de maintenance
+# Ajout de la bannière de sujet de maintenance
 st.sidebar.markdown("""
     <div class="escp-banner">
         🎓 <b>Projet de Fin d'Études ESCP</b><br>
-        ⚙️ Spécialisation : <i>Maintenance Prescriptive & Industrie 4.0</i>
+        ⚙️ Sujet : <i>Maintenance Prescriptive & Industrie 4.0</i>
     </div>
 """, unsafe_allow_html=True)
 
