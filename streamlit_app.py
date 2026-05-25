@@ -34,28 +34,31 @@ st.markdown("""
         gap: 15px;
     }
     
- # ── RUL Bar Section ─────────────────────────────────────────────────────────
+# ── RUL Bar Section ─────────────────────────────────────────────────────────
 st.markdown("---")
 r_color = "#10b981" if c_rul > 48 else ("#f59e0b" if c_rul > 24 else "#ef4444")
 r_status = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
 
-# On calcule le pourcentage en amont
+# Calcul du pourcentage en dehors de la chaîne de texte
 rul_percentage = int((c_rul / 72) * 100)
 
-# Doublement des accolades {{ }} pour le CSS natif afin de bloquer l'interprétation Python
-st.markdown(f"""
+# Chaîne HTML pure (sans f-string) pour bloquer toute interprétation parasite de Python
+html_template = """
     <div style="display: flex; justify-content: space-between; align-items: baseline;">
         <span style="font-weight: bold; font-size: 1.2rem;">Durée de vie résiduelle (RUL)</span>
-        <span><b style="font-size: 1.5rem;">{c_rul} h</b> <span style="color:{r_color}; font-weight:bold;">{r_status}</span></span>
+        <span><b style="font-size: 1.5rem;">{rul} h</b> <span style="color:{color}; font-weight:bold;">{status}</span></span>
     </div>
     <div class="rul-container">
-        <div class="rul-marker" style="left: 0%%;">0h</div>
-        <div class="rul-marker" style="left: 33.3%%; color:#ef4444;">Seuil agent : 24h</div>
-        <div class="rul-marker" style="left: 66.6%%; color:#f59e0b;">Alerte : 48h</div>
-        <div class="rul-marker" style="right: 0%%; color:#10b981;">72h</div>
-        <div class="rul-bar" style="width: {rul_percentage}%%; background-color: {r_color};"></div>
+        <div class="rul-marker" style="left: 0%;">0h</div>
+        <div class="rul-marker" style="left: 33.3%; color:#ef4444;">Seuil agent : 24h</div>
+        <div class="rul-marker" style="left: 66.6%; color:#f59e0b;">Alerte : 48h</div>
+        <div class="rul-marker" style="right: 0%;">72h</div>
+        <div class="rul-bar" style="width: {pct}%; background-color: {color};"></div>
     </div>
-""", unsafe_allow_html=True)
+"""
+
+# Injection sécurisée des variables via .format()
+st.markdown(html_template.format(rul=c_rul, color=r_color, status=r_status, pct=rul_percentage), unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── Base de Connaissances ──────────────────────────────────────────────────
