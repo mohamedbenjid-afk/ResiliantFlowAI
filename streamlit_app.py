@@ -8,7 +8,6 @@ import requests
 st.set_page_config(page_title="ResilientFlow AI - Prescriptive Dashboard", layout="wide")
 
 # ── CONFIGURATION DU RÉPERTOIRE GITHUB ──────────────────────────────────────
-# Modifiez ces variables avec vos propres informations de dépôt si nécessaire
 GITHUB_USER = "VOTRE_NOM_UTILISATEUR_GITHUB"
 GITHUB_REPO = "maintenance-knowledge-base"
 GITHUB_BRANCH = "main"
@@ -42,6 +41,17 @@ st.markdown("""
         border-radius: 5px;
         margin-top: 10px;
         margin-bottom: 10px;
+    }
+    /* Style pour la bannière académique */
+    .escp-banner {
+        background-color: #002349;
+        color: #ffffff;
+        padding: 10px;
+        border-radius: 4px;
+        text-align: center;
+        margin-bottom: 15px;
+        font-size: 0.85rem;
+        border-left: 4px solid #d4af37;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -80,7 +90,6 @@ if st.session_state.running:
     c_pres = max(0.1, st.session_state.base_pres + np.random.uniform(-0.05, 0.05))
     c_cur = max(0.0, st.session_state.base_cur + np.random.uniform(-0.2, 0.2))
 
-    # Calcul de l'indicateur de stress et de vie résiduelle (RUL)
     stress = max(0, (c_temp-60)/50 * 0.4 + (c_vib/5) * 0.3 + (c_pres/8) * 0.3)
     c_rul = max(0, int(72 * (1 - stress**1.2)))
 
@@ -101,8 +110,18 @@ else:
 r_status = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
 rul_percentage = float(max(0.0, min(1.0, c_rul / 72.0)))
 
-# ── BARRE LATÉRALE DE NAVIGATION (MULTI-PROFILS) ────────────────────────────
-st.sidebar.image("https://img.icons8.com/fluency/96/artificial-intelligence.png", width=50)
+# ── BARRE LATÉRALE : IDENTITÉ ESCP & NAVIGATION ─────────────────────────────
+# Ajout du logo officiel ESCP Business School
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/e/e0/Logo_ESCP_Business_School.png", use_container_width=True)
+
+# Ajout de la bannière académique de sujet de maintenance
+st.sidebar.markdown("""
+    <div class="escp-banner">
+        🎓 <b>Projet de Fin d'Études ESCP</b><br>
+        ⚙️ Spécialisation : <i>Maintenance Prescriptive & Industrie 4.0</i>
+    </div>
+""", unsafe_allow_html=True)
+
 st.sidebar.markdown("### ResilientFlow AI\n*Couche Prescriptive v1*")
 
 profil = st.sidebar.selectbox(
