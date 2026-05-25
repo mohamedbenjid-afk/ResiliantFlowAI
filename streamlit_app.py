@@ -6,60 +6,19 @@ import time
 # 1. Configuration de la page
 st.set_page_config(page_title="Dashboard Pompe P-17", layout="wide")
 
-# ── Style CSS pour coller à l'image ──────────────────────────────────────────
+# ── Style CSS épuré ──────────────────────────────────────────────────────────
 st.markdown("""
     <style>
-    /* Global Background */
     .stApp { background-color: #ffffff; }
-    
-    /* Metrics */
     div[data-testid="stMetric"] {
         background-color: #fcfcfc !important;
         border: 1px solid #eeeeee !important;
         padding: 10px 20px !important;
         border-radius: 5px !important;
     }
-    
-    /* Slider Threshold Labels */
     .threshold-label { color: #ef4444; font-size: 0.8rem; font-weight: bold; }
-    
-    /* Agent Box at bottom */
-    .agent-status-box {
-        background-color: #f8fafc;
-        border: 1px solid #e2e8f0;
-        padding: 15px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        gap: 15px;
-    }
-    
-# ── RUL Bar Section ─────────────────────────────────────────────────────────
-st.markdown("---")
-r_color = "#10b981" if c_rul > 48 else ("#f59e0b" if c_rul > 24 else "#ef4444")
-r_status = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
-
-# Calcul du pourcentage en dehors de la chaîne de texte
-rul_percentage = int((c_rul / 72) * 100)
-
-# Chaîne HTML pure (sans f-string) pour bloquer toute interprétation parasite de Python
-html_template = """
-    <div style="display: flex; justify-content: space-between; align-items: baseline;">
-        <span style="font-weight: bold; font-size: 1.2rem;">Durée de vie résiduelle (RUL)</span>
-        <span><b style="font-size: 1.5rem;">{rul} h</b> <span style="color:{color}; font-weight:bold;">{status}</span></span>
-    </div>
-    <div class="rul-container">
-        <div class="rul-marker" style="left: 0%;">0h</div>
-        <div class="rul-marker" style="left: 33.3%; color:#ef4444;">Seuil agent : 24h</div>
-        <div class="rul-marker" style="left: 66.6%; color:#f59e0b;">Alerte : 48h</div>
-        <div class="rul-marker" style="right: 0%;">72h</div>
-        <div class="rul-bar" style="width: {pct}%; background-color: {color};"></div>
-    </div>
-"""
-
-# Injection sécurisée des variables via .format()
-st.markdown(html_template.format(rul=c_rul, color=r_color, status=r_status, pct=rul_percentage), unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
+    </style>
+""", unsafe_allow_html=True)
 
 # ── Base de Connaissances ──────────────────────────────────────────────────
 KNOWLEDGE_BASE = {
@@ -92,13 +51,12 @@ with h3:
 # ── Data Update ─────────────────────────────────────────────────────────────
 if st.session_state.running:
     st.session_state.tick += 1
-    # On utilise les valeurs de base (modifiables par les sliders)
     c_temp = st.session_state.base_temp + np.random.uniform(-0.5, 0.5)
     c_vib = max(0.1, st.session_state.base_vib + np.random.uniform(-0.05, 0.05))
     c_pres = max(0.1, st.session_state.base_pres + np.random.uniform(-0.05, 0.05))
     c_cur = max(0.0, st.session_state.base_cur + np.random.uniform(-0.2, 0.2))
 
-    # Calcul RUL (Logique simplifiée basée sur les seuils de l'image)
+    # Calcul RUL de base
     stress = max(0, (c_temp-60)/50 * 0.4 + (c_vib/5) * 0.3 + (c_pres/8) * 0.3)
     c_rul = max(0, int(72 * (1 - stress**1.2)))
 
@@ -111,7 +69,11 @@ if st.session_state.running:
     for k in st.session_state.history:
         if len(st.session_state.history[k]) > 30: st.session_state.history[k].pop(0)
 else:
-    c_temp, c_vib, c_pres, c_cur, c_rul = st.session_state.history["temp"][-1], st.session_state.history["vib"][-1], st.session_state.history["pres"][-1], st.session_state.base_cur, st.session_state.history["rul"][-1]
+    c_temp = st.session_state.history["temp"][-1]
+    c_vib = st.session_state.history["vib"][-1]
+    c_pres = st.session_state.history["pres"][-1]
+    c_cur = st.session_state.base_cur
+    c_rul = st.session_state.history["rul"][-1]
 
 # ── Top Metrics ─────────────────────────────────────────────────────────────
 m1, m2, m3, m4 = st.columns(4)
@@ -119,3 +81,60 @@ m1.metric("TEMPÉRATURE", f"{c_temp:.1f} °C")
 m2.metric("VIBRATION", f"{c_vib:.1f} mm/s")
 m3.metric("PRESSION", f"{c_pres:.1f} bar")
 m4.metric("COURANT", f"{c_cur:.1f} A")
+
+# ── RUL Bar Section (Version Native Streamlit sans bug HTML) ────────────────
+st.markdown("---")
+r_status = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
+
+col_left, col_right = st.columns([2, 1])
+with col_left:
+    st.markdown("**Durée de vie résiduelle (RUL)**")
+with col_right:
+    st.markdown(f"<p style='text-align: right; margin: 0;'><b>{c_rul} h</b> ({r_status})</p>", unsafe_allow_html=True)
+
+# Barre de progression native (sans risque de SyntaxError)
+rul_percentage = float(max(0.0, min(1.0, c_rul / 72.0)))
+st.progress(rul_percentage)
+
+# Repères de texte sous la barre
+lbl1, lbl2, lbl3, lbl4 = st.columns([1, 1, 1, 1])
+lbl1.caption("0h")
+lbl2.caption("⚠️ Seuil agent : 24h")
+lbl3.caption("🔔 Alerte : 48h")
+lbl4.markdown("<p style='text-align: right; font-size: 0.8rem; color: gray; margin: 0;'>72h</p>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ── Charts 2x2 ──────────────────────────────────────────────────────────────
+def plot_small(title, data, color, unit):
+    fig = go.Figure(go.Scatter(x=st.session_state.history["time"], y=data, mode='lines', line=dict(color=color, width=3)))
+    fig.update_layout(title=f"{title} <span style='float:right;'>{data[-1]:.1f} {unit}</span>", height=150, margin=dict(l=0,r=0,t=30,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(showgrid=True, gridcolor='#f1f1f1'))
+    return fig
+
+c1, c2 = st.columns(2)
+with c1:
+    st.plotly_chart(plot_small("Température", st.session_state.history["temp"], "#ef4444", "°C"), use_container_width=True)
+    st.plotly_chart(plot_small("Pression", st.session_state.history["pres"], "#3b82f6", "bar"), use_container_width=True)
+with c2:
+    st.plotly_chart(plot_small("Vibration", st.session_state.history["vib"], "#f59e0b", "mm/s"), use_container_width=True)
+    st.plotly_chart(plot_small("RUL", st.session_state.history["rul"], "#10b981", "h"), use_container_width=True)
+
+# ── Injection Manuelle ──────────────────────────────────────────────────────
+st.markdown("#### ⌨️ Injection manuelle — forcer des valeurs")
+i1, i2, i3, i4 = st.columns(4)
+with i1: 
+    st.session_state.base_temp = st.slider("Température", 60, 140, int(st.session_state.base_temp))
+    st.markdown("<span class='threshold-label'>seuil 110°C</span>", unsafe_allow_html=True)
+with i2:
+    st.session_state.base_vib = st.slider("Vibration", 0.0, 8.0, float(st.session_state.base_vib))
+    st.markdown("<span class='threshold-label'>seuil 4.5 mm/s</span>", unsafe_allow_html=True)
+with i3:
+    st.session_state.base_pres = st.slider("Pression", 0.0, 10.0, float(st.session_state.base_pres))
+    st.markdown("<span class='threshold-label'>seuil 7 bar</span>", unsafe_allow_html=True)
+with i4:
+    st.session_state.base_cur = st.slider("Courant", 15, 35, int(st.session_state.base_cur))
+    st.markdown("<span class='threshold-label'>seuil 28 A</span>", unsafe_allow_html=True)
+
+# ── Scénarios Rapides ───────────────────────────────────────────────────────
+st.markdown("##### Scénarios rapides")
+s1, s2, s3, s4, s5 = st.columns(5)
+if s1.button("Nominal", use_container_width=True): st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 67.
