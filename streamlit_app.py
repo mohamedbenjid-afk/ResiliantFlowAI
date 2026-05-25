@@ -1,13 +1,12 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime
+import time
 
-# ── Configuration de la page ─────────────────────────────────────────────────
+# 1. Configuration de la page
 st.set_page_config(page_title="Pompe P-17 — Unité B", layout="wide")
 
-# Injection CSS pour coller au design épuré de la Photo 2 (Cartes blanches)
+# Injection CSS pour les cartes de métriques
 st.markdown("""
     <style>
     div[data-testid="stMetric"] {
@@ -16,34 +15,32 @@ st.markdown("""
         padding: 15px 20px !important;
         border-radius: 8px !important;
     }
-    .stButton>button { border-radius: 6px !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# ── Constantes & Contextes ──────────────────────────────────────────────────
+# ── Constantes ───────────────────────────────────────────────────────────────
 RUL_MAX = 72
 RUL_TRIGGER = 24
-RUL_WARN = 48
 WEIGHTS = {"temp": 0.35, "vib": 0.30, "pres": 0.20, "cur": 0.15}
 
-CONTEXT = {
-    "equipement": "Pompe P-17 — Unité B",
-    "of_actif": "OF-2847",
-    "duree_of_restante_h": 52,
-    "equipe_dispo_dans_h": 48,
-    "pieces_stock": ["Joint JM-220 (B-12)", "Roulement 6205-2RS"],
-    "technicien_disponible": "Lionel"
-}
-
-# ── Initialisation du Session State (Indispensable pour bloquer les valeurs) ──
-if 'temp' not in st.session_state: st.session_state.temp = 64.0
-if 'vib' not in st.session_state: st.session_state.vib = 1.0
-if 'pres' not in st.session_state: st.session_state.pres = 4.8
-if 'cur' not in st.session_state: st.session_state.cur = 21.0
+# ── Initialisation des Historiques (Session State) ───────────────────────────
+# On crée des listes pour stocker les 30 derniers points de chaque capteur
+if 'history' not in st.session_state:
+    st.session_state.history = {
+        "time": list(range(30)),
+        "temp": [64.0] * 30,
+        "vib": [1.0] * 30,
+        "pres": [4.8] * 30,
+        "rul": [72.0] * 30
+    }
+if 'base_temp' not in st.session_state: st.session_state.base_temp = 64.0
+if 'base_vib' not in st.session_state: st.session_state.base_vib = 1.0
+if 'base_pres' not in st.session_state: st.session_state.base_pres = 4.8
+if 'base_cur' not in st.session_state: st.session_state.base_cur = 21.0
 if 'tick' not in st.session_state: st.session_state.tick = 434
 if 'running' not in st.session_state: st.session_state.running = True
 
-# ── Entête Dynamique (Alignement Photo 2) ───────────────────────────────────
+# ── Entête avec bouton Pause/Play ────────────────────────────────────────────
 top_left, top_mid, top_right = st.columns([3, 1, 2])
 with top_left:
     st.markdown("## 🟢 Pompe P-17 — Unité B")
@@ -51,68 +48,77 @@ with top_mid:
     st.write(f"<p style='text-align:right; font-family:monospace; font-size:20px; margin-top:10px;'>t = {st.session_state.tick}</p>", unsafe_allow_html=True)
 with top_right:
     col_b1, col_b2 = st.columns(2)
-    if col_b1.button("⏸️ En cours" if st.session_state.running else "▶️ Pause", use_container_width=True):
+    if col_b1.button("⏸️ Pause" if st.session_state.running else "▶️ En cours", use_container_width=True):
         st.session_state.running = not st.session_state.running
     if col_b2.button("🔄 Reset", use_container_width=True):
-        st.session_state.temp, st.session_state.vib, st.session_state.pres, st.session_state.cur = 64.0, 1.0, 4.8, 21.0
+        st.session_state.history = {"time": list(range(30)), "temp": [64.0]*30, "vib": [1.0]*30, "pres": [4.8]*30, "rul": [72.0]*30}
+        st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 64.0, 1.0, 4.8, 21.0
         st.session_state.tick = 434
-        st.rerun()
+        st.st.rerun()
 
+# ── Évolution des données en temps réel ──────────────────────────────────────
 if st.session_state.running:
     st.session_state.tick += 1
+    
+    # On ajoute un léger bruit aléatoire autour de la valeur de base demandée
+    current_temp = st.session_state.base_temp + np.random.uniform(-0.8, 0.8)
+    current_vib = max(0.1, st.session_state.base_vib + np.random.uniform(-0.15, 0.15))
+    current_pres = max(0.5, st.session_state.base_pres + np.random.uniform(-0.1, 0.1))
+    current_cur = max(0.0, st.session_state.base_cur + np.random.uniform(-0.3, 0.3))
+    
+    # Calcul du RUL instantané
+    dt = max(0.0, min(1.0, (current_temp - 64.0) / (140.0 - 64.0)))
+    dv = max(0.0, min(1.0, (current_vib - 1.0) / (8.0 - 1.0)))
+    dp = max(0.0, min(1.0, (current_pres - 4.8) / (10.0 - 4.8)))
+    dc = max(0.0, min(1.0, (current_cur - 21.0) / (40.0 - 21.0)))
+    stress = (dt * WEIGHTS["temp"] + dv * WEIGHTS["vib"] + dp * WEIGHTS["pres"] + dc * WEIGHTS["cur"])
+    current_rul = max(0, round(RUL_MAX * (1 - stress ** 0.6)))
 
-# ── Section Scénarios Rapides (Placée en haut ou bas selon préférence, ici intégrée fluidement) ──
-scenarios = {
-    "Nominal":       (64.0, 1.0, 4.8, 21.0),
-    "Surchauffe moteur": (112.0, 1.4, 5.0, 23.0),
-    "Roulement dégradé": (78.0, 4.8, 4.9, 22.0),
-    "Pression instable": (66.0, 1.8, 7.4, 21.5),
-    "🔥 Défaillance critique P-17": (125.0, 6.2, 7.8, 31.5),
-}
+    # On pousse les nouvelles valeurs dans l'historique et on retire le plus vieux point
+    st.session_state.history["time"].append(st.session_state.tick)
+    st.session_state.history["temp"].append(current_temp)
+    st.session_state.history["vib"].append(current_vib)
+    st.session_state.history["pres"].append(current_pres)
+    st.session_state.history["rul"].append(current_rul)
+    
+    for k in st.session_state.history:
+        if len(st.session_state.history[k]) > 30:
+            st.session_state.history[k].pop(0)
+else:
+    # Si en pause, on prend le dernier point figé
+    current_temp = st.session_state.history["temp"][-1]
+    current_vib = st.session_state.history["vib"][-1]
+    current_pres = st.session_state.history["pres"][-1]
+    current_cur = st.session_state.base_cur
+    current_rul = st.session_state.history["rul"][-1]
 
-# --- Calcul des valeurs actuelles (Sliders vs Boutons) ---
-# Si un bouton est pressé, il met à jour le session_state immédiatement
-# ──────────────────────────────────────────────────────────────────────────────
-
-# ── Section 1 : KPI Métriques du haut ─────────────────────────────────────────
+# ── Section 1 : Métriques du haut ────────────────────────────────────────────
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("TEMPÉRATURE", f"{st.session_state.temp:.0f} °C")
-m2.metric("VIBRATION", f"{st.session_state.vib:.1f} mm/s")
-m3.metric("PRESSION", f"{st.session_state.pres:.1f} bar")
-m4.metric("COURANT", f"{st.session_state.cur:.1f} A")
+m1.metric("TEMPÉRATURE", f"{current_temp:.1f} °C")
+m2.metric("VIBRATION", f"{current_vib:.2f} mm/s")
+m3.metric("PRESSION", f"{current_pres:.2f} bar")
+m4.metric("COURANT", f"{current_cur:.1f} A")
 
-# ── Calcul du RUL Dynamique ──────────────────────────────────────────────────
-dt = max(0.0, min(1.0, (st.session_state.temp - 64.0) / (140.0 - 64.0)))
-dv = max(0.0, min(1.0, (st.session_state.vib - 1.0) / (8.0 - 1.0)))
-dp = max(0.0, min(1.0, (st.session_state.pres - 4.8) / (10.0 - 4.8)))
-dc = max(0.0, min(1.0, (st.session_state.cur - 21.0) / (40.0 - 21.0)))
-stress = (dt * WEIGHTS["temp"] + dv * WEIGHTS["vib"] + dp * WEIGHTS["pres"] + dc * WEIGHTS["cur"])
-rul = max(0, round(RUL_MAX * (1 - stress ** 0.6)))
-
-# ── Section 2 : Barre de Progression Linéaire RUL (Style Photo 2) ─────────────
+# ── Section 2 : Barre RUL ────────────────────────────────────────────────────
 st.markdown("---")
-status_text = "Nominal" if rul > RUL_WARN else ("Alerte" if rul > RUL_TRIGGER else "Critique")
-status_color = "#10b981" if rul > RUL_WARN else ("#f59e0b" if rul > RUL_TRIGGER else "#ef4444")
+status_text = "Nominal" if current_rul > 48 else ("Alerte" if current_rul > RUL_TRIGGER else "Critique")
+status_color = "#10b981" if current_rul > 48 else ("#f59e0b" if current_rul > RUL_TRIGGER else "#ef4444")
+pct = (current_rul / RUL_MAX) * 100
 
-st.markdown(f"#### Durée de vie résiduelle (RUL) <span style='float:right; color:{status_color};'><b>{rul} h</b> <small style='color:gray;'>{status_text}</small></span>", unsafe_allow_html=True)
-pct = (rul / RUL_MAX) * 100
-
+st.markdown(f"#### Durée de vie résiduelle (RUL) <span style='float:right; color:{status_color};'><b>{current_rul} h</b> <small style='color:gray;'>{status_text}</small></span>", unsafe_allow_html=True)
 st.markdown(f"""
     <div style="width:100%; background-color:#e2e8f0; height:14px; border-radius:7px; overflow:hidden;">
         <div style="width:{pct}%; background-color:{status_color}; height:100%; transition: width 0.3s;"></div>
     </div>
-    <div style="display:flex; justify-content:space-between; font-size:12px; color:#64748b; margin-top:4px; margin-bottom:25px;">
-        <span>0h</span><span style="color:#ef4444; font-weight:600;">Seuil agent : 24h</span><span style="color:#f59e0b; font-weight:600;">Alerte : 48h</span><span>72h (nominal)</span>
-    </div>
 """, unsafe_allow_html=True)
 
-# ── Section 3 : Les 4 Graphiques Temporels Alternés ───────────────────────────
-def make_micro_chart(title, current, nominal, color):
+# ── Section 3 : Graphiques Temporels VIVANTS (Plot l'historique complet) ──────
+def make_live_chart(title, y_data, color, suffix=""):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=list(range(20)), y=np.linspace(nominal, current, 20) + np.random.normal(0, 0.1, 20), mode='lines', line=dict(color=color, width=2)))
+    fig.add_trace(go.Scatter(x=st.session_state.history["time"], y=y_data, mode='lines+markers', line=dict(color=color, width=2.5)))
     fig.update_layout(
-        title=f"<b>{title}</b> <span style='float:right;'>{current}</span>", height=140,
-        margin=dict(l=10, r=10, t=30, b=10), plot_bgcolor='white', paper_bgcolor='white',
+        title=f"<b>{title}</b> — {y_data[-1]:.1f}{suffix}", height=150,
+        margin=dict(l=15, r=15, t=35, b=15), plot_bgcolor='white', paper_bgcolor='white',
         xaxis=dict(showgrid=True, gridcolor='#f1f5f9', showticklabels=False),
         yaxis=dict(showgrid=True, gridcolor='#f1f5f9')
     )
@@ -120,39 +126,27 @@ def make_micro_chart(title, current, nominal, color):
 
 g1, g2 = st.columns(2)
 with g1:
-    st.plotly_chart(make_micro_chart("Température (°C)", st.session_state.temp, 64.0, "#ef4444"), use_container_width=True)
-    st.plotly_chart(make_micro_chart("Pression (bar)", st.session_state.pres, 4.8, "#3b82f6"), use_container_width=True)
+    st.plotly_chart(make_live_chart("Température", st.session_state.history["temp"], "#ef4444", "°C"), use_container_width=True)
+    st.plotly_chart(make_live_chart("Pression", st.session_state.history["pres"], "#3b82f6", " bar"), use_container_width=True)
 with g2:
-    st.plotly_chart(make_micro_chart("Vibration (mm/s)", st.session_state.vib, 1.0, "#f59e0b"), use_container_width=True)
-    st.plotly_chart(make_micro_chart("RUL (h)", rul, 72.0, "#10b981"), use_container_width=True)
+    st.plotly_chart(make_live_chart("Vibration", st.session_state.history["vib"], "#f59e0b", " mm/s"), use_container_width=True)
+    st.plotly_chart(make_live_chart("RUL (h)", st.session_state.history["rul"], "#10b981", "h"), use_container_width=True)
 
-# ── Section 4 : Injection Manuelle Via Sliders ────────────────────────────────
-with st.container(border=True):
-    st.markdown("⚙️ **Injection manuelle — forcer des valeurs**")
-    sc1, sc2 = st.columns(2)
-    with sc1:
-        st.session_state.temp = sc1.slider("Température (seuil 110°C)", 50.0, 145.0, float(st.session_state.temp), 1.0)
-        st.session_state.pres = sc1.slider("Pression (seuil 7 bar)", 2.0, 11.0, float(st.session_state.pres), 0.1)
-    with sc2:
-        st.session_state.vib = sc2.slider("Vibration (seuil 4.5 mm/s)", 0.5, 9.0, float(st.session_state.vib), 0.1)
-        st.session_state.cur = sc2.slider("Courant (seuil 28A)", 10.0, 40.0, float(st.session_state.cur), 0.5)
-
-# ── Section 5 : Boutons de Scénarios en bas de page ───────────────────────────
+# ── Section 4 : Scénarios rapides ────────────────────────────────────────────
 st.markdown("### Scénarios rapides")
 b1, b2, b3, b4, b5 = st.columns(5)
 if b1.button("Nominal", use_container_width=True):
-    st.session_state.temp, st.session_state.vib, st.session_state.pres, st.session_state.cur = scenarios["Nominal"]; st.rerun()
+    st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 64.0, 1.0, 4.8, 21.0
 if b2.button("Surchauffe moteur", use_container_width=True):
-    st.session_state.temp, st.session_state.vib, st.session_state.pres, st.session_state.cur = scenarios["Surchauffe moteur"]; st.rerun()
+    st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 112.0, 1.4, 5.0, 23.0
 if b3.button("Roulement dégradé", use_container_width=True):
-    st.session_state.temp, st.session_state.vib, st.session_state.pres, st.session_state.cur = scenarios["Roulement dégradé"]; st.rerun()
+    st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 78.0, 4.8, 4.9, 22.0
 if b4.button("Pression instable", use_container_width=True):
-    st.session_state.temp, st.session_state.vib, st.session_state.pres, st.session_state.cur = scenarios["Pression instable"]; st.rerun()
+    st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 66.0, 1.8, 7.4, 21.5
 if b5.button("🔥 Défaillance critique P-17", type="primary", use_container_width=True):
-    st.session_state.temp, st.session_state.vib, st.session_state.pres, st.session_state.cur = scenarios["Critique P-17"]; st.rerun()
+    st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 125.0, 6.2, 7.8, 31.5
 
-# ── Prescriptions de l'Agent Automatique ──────────────────────────────────────
-if rul <= RUL_TRIGGER:
-    st.markdown("---")
-    st.error("### 🤖 Actions requises par l'Agent Prescriptif")
-    st.info(f"💡 **Scénario optimal conseillé : Réduire la cadence de 20%**\n\nPermet d'aligner la fin de l'OF `{CONTEXT['of_actif']}` avec l'arrivée de l'équipe de maintenance de **{CONTEXT['technicien_disponible']}**.")
+# ── Boucle de rafraîchissement automatique (Le moteur de l'animation) ────────
+if st.session_state.running:
+    time.sleep(1) # Attend 1 seconde
+    st.rerun()    # Relance l'application automatiquement
