@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import requests
 
-# Récupération des variables globales calculées par l'accueil
+# Récupération des variables globales calculées par l'accueil 
 c_temp = st.session_state.get('c_temp', 67.0)
 c_vib = st.session_state.get('c_vib', 0.8)
 c_pres = st.session_state.get('c_pres', 4.4)
