@@ -29,7 +29,8 @@ if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True
 st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
 st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
 st.sidebar.caption("RUL estimé : " + str(c_rul) + " heures")
-st.sidebar.markdown("<a href='/' target='_self' style='color:#002349;font-weight:bold;text-decoration:none;'>⬅️ Retour à l'accueil</a>", unsafe_allow_html=True)
+if st.sidebar.button("⬅️ Retour à l'accueil", use_container_width=True):
+    st.switch_page("streamlit_home.py")
 
 # ── CONTENU PRINCIPAL ─────────────────────────────────────────────────────────
 st.markdown("### 🛡️ Conformité Réglementaire, Sécurité & Audit HSE — Leila")
