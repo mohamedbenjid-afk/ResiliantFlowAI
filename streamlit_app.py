@@ -5,39 +5,6 @@ import time
 # Configuration de la page principale
 st.set_page_config(page_title="ResilientFlow AI - Prescriptive Dashboard", layout="wide")
 
-# ── STYLE CSS GLOBAL & SÉCURISÉ ─────────────────────────────────────────────
-st.markdown("""
-    <style>
-    .stApp { background-color: #ffffff; }
-    div[data-testid="stMetric"] {
-        background-color: #fcfcfc !important;
-        border: 1px solid #eeeeee !important;
-        padding: 8px 15px !important;
-        border-radius: 5px !important;
-    }
-    .threshold-label { color: #ef4444; font-size: 0.75rem; font-weight: bold; display: block; margin-top: -10px; margin-bottom: 5px; }
-    .doc-box {
-        background-color: #f0fdf4;
-        border: 1px solid #bbf7d0;
-        padding: 15px;
-        border-radius: 5px;
-        margin-top: 10px;
-        margin-bottom: 10px;
-    }
-    .escp-banner {
-        background-color: #002349;
-        color: #ffffff;
-        padding: 12px;
-        border-radius: 4px;
-        text-align: center;
-        margin-top: 5px;
-        margin-bottom: 15px;
-        font-size: 0.85rem;
-        border-left: 4px solid #d4af37;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # ── INITIALISATION DU SESSION STATE (MOTEUR DE SIMULATION) ──────────────────
 if 'history' not in st.session_state:
     st.session_state.history = {"time": list(range(30)), "temp": [67.0]*30, "vib": [0.8]*30, "pres": [4.4]*30, "rul": [72.0]*30}
@@ -73,21 +40,13 @@ else:
     c_cur = st.session_state.base_cur
     c_rul = st.session_state.history["rul"][-1]
 
-# Stockage temporaire pour les autres pages
 st.session_state.c_temp = c_temp
 st.session_state.c_vib = c_vib
 st.session_state.c_pres = c_pres
 st.session_state.c_cur = c_cur
 st.session_state.c_rul = c_rul
 
-# Barre latérale commune pour le contrôle
-st.sidebar.markdown("""
-    <div class="escp-banner">
-        🎓 <b>Projet de Fin d'Études ESCP</b><br>
-        ⚙️ Sujet : <i>Maintenance Prescriptive & Industrie 4.0</i>
-    </div>
-""", unsafe_allow_html=True)
-
+# Barre latérale commune
 st.sidebar.markdown("### ResilientFlow AI\n*Couche Prescriptive v1*")
 if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True):
     st.session_state.running = not st.session_state.running
@@ -97,14 +56,8 @@ st.sidebar.caption(f"Statut machine : Pompe P-17 | RUL : {c_rul}h")
 # Contenu de l'accueil
 st.title("🚀 Bienvenue sur la plateforme ResilientFlow AI")
 st.markdown("---")
-st.markdown("### 🛠️ Mode d'emploi pour l'équipe de développement :")
-st.info("""
-1. **Ne touchez plus à ce fichier principal** (`streamlit_app.py`).
-2. Allez dans le dossier `pages/` sur GitHub pour modifier uniquement votre interface.
-3. Utilisez le menu de gauche pour naviguer d'une page à l'autre et tester vos changements.
-""")
+st.info("Utilisez le nouveau menu ci-contre pour naviguer dans les espaces de l'équipe.")
 
-# Auto-refresh de l'accueil
 if st.session_state.running:
     time.sleep(1)
     st.rerun()
