@@ -121,7 +121,7 @@ with c1:
             </div>
         </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/1_Lionel.py", label="➜ Ouvrir le terminal terrain", use_container_width=True)
+    st.markdown("<a href='/1_Lionel' target='_self' style='display:block;text-align:center;background:#002349;color:white;padding:8px 0;border-radius:6px;text-decoration:none;font-size:0.9rem;'>🔧 ➜ Ouvrir le terminal terrain</a>", unsafe_allow_html=True)
 
 with c2:
     st.markdown("""
@@ -135,7 +135,7 @@ with c2:
             </div>
         </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/2_Sophie.py", label="➜ Ouvrir l'espace d'arbitrage", use_container_width=True)
+    st.markdown("<a href='/2_Sophie' target='_self' style='display:block;text-align:center;background:#002349;color:white;padding:8px 0;border-radius:6px;text-decoration:none;font-size:0.9rem;'>📋 ➜ Ouvrir l'espace d'arbitrage</a>", unsafe_allow_html=True)
 
 with c3:
     st.markdown("""
@@ -149,7 +149,7 @@ with c3:
             </div>
         </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/3_Antoine.py", label="➜ Ouvrir le tableau stratégique", use_container_width=True)
+    st.markdown("<a href='/3_Antoine' target='_self' style='display:block;text-align:center;background:#002349;color:white;padding:8px 0;border-radius:6px;text-decoration:none;font-size:0.9rem;'>📊 ➜ Ouvrir le tableau stratégique</a>", unsafe_allow_html=True)
 
 with c4:
     st.markdown("""
@@ -163,7 +163,7 @@ with c4:
             </div>
         </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/4_Leila.py", label="➜ Ouvrir l'espace HSE", use_container_width=True)
+    st.markdown("<a href='/4_Leila' target='_self' style='display:block;text-align:center;background:#002349;color:white;padding:8px 0;border-radius:6px;text-decoration:none;font-size:0.9rem;'>🛡️ ➜ Ouvrir l'espace HSE</a>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("---")
