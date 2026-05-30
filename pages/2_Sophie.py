@@ -31,7 +31,7 @@ if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True
 st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
 st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
 st.sidebar.caption("RUL estimé : " + str(c_rul) + " heures")
-st.sidebar.page_link("streamlit_app.py", label="⬅️ Retour à l'accueil")
+st.sidebar.markdown("<a href='/' target='_self' style='color:#002349;font-weight:bold;text-decoration:none;'>⬅️ Retour à l'accueil</a>", unsafe_allow_html=True)
 
 # ── CONTENU PRINCIPAL ─────────────────────────────────────────────────────────
 st.markdown("### 📋 Espace d'Arbitrage et Pilotage des Ressources — Sophie")
