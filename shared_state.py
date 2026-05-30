@@ -1,127 +1,44 @@
-# shared_state.py
-# Module partagé : initialisation du session state, mise à jour capteurs, config GitHub
-import streamlit as st
-import numpy as np
-import requests
+from notion_client import Client
 
-# ── CONFIGURATION GITHUB ─────────────────────────────────────────────────────
-GITHUB_USER   = "VOTRE_NOM_UTILISATEUR_GITHUB"
-GITHUB_REPO   = "maintenance-knowledge-base"
-GITHUB_BRANCH = "main"
+notion = Client(auth=os.environ["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"])
 
+# IDs des 4 collections
+DB_EQUIPEMENTS    = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
+DB_OF             = "6777a9e0-4c76-49ca-a3d4-fb20a579cb2d"
+DB_MAINTENANCE    = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
+DB_STOCK          = "7229437a-027a-440f-a7be-5e37157f3b8d"
 
-def get_github_file(path, is_json=False):
-    url = (
-        "https://raw.githubusercontent.com/"
-        + GITHUB_USER + "/" + GITHUB_REPO + "/" + GITHUB_BRANCH + "/" + path
+def get_equipement(nom):
+    res = notion.databases.query(
+        database_id=DB_EQUIPEMENTS,
+        filter={"property": "Équipement", "title": {"equals": nom}}
     )
-    try:
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            return response.json() if is_json else response.text
-        return None
-    except Exception:
-        return None
+    return res["results"][0] if res["results"] else None
 
+def get_of_actifs(equipement):
+    res = notion.databases.query(
+        database_id=DB_OF,
+        filter={"and": [
+            {"property": "Équipement concerné", "rich_text": {"contains": equipement}},
+            {"property": "Statut", "select": {"equals": "En cours"}}
+        ]}
+    )
+    return res["results"]
 
-# ── DONNÉES DE CONTEXTE USINE ─────────────────────────────────────────────────
-CONTEXTE_USINE = {
-    "production": {
-        "ordre_fabrication_actif": "OF-2026-89A",
-        "ligne_concerne":          "Ligne 2",
-        "cout_arret_heure":        6500,
-    },
-    "equipe": {
-        "technicien_recommande":  "Lionel (Habilité Mécanique/Hydraulique - Charge : 32h/40h)",
-        "technicien_secondaire":  "Marc D. (Habilité Électricité - Surcharge : 39h/40h)",
-    },
-    "stocks": {
-        "pieces_disponibles": (
-            "Joints d'étanchéité P17 (En stock : 2) | "
-            "Roulements (Stock : 0 - Commande en cours)"
-        ),
-    },
-}
+def get_stock_composant(nom):
+    res = notion.databases.query(
+        database_id=DB_STOCK,
+        filter={"property": "Composant", "title": {"contains": nom}}
+    )
+    return res["results"][0] if res["results"] else None
 
-
-# ── CSS COMMUN ────────────────────────────────────────────────────────────────
-COMMON_CSS = """
-<style>
-.stApp { background-color: #ffffff; }
-div[data-testid="stMetric"] {
-    background-color: #fcfcfc !important;
-    border: 1px solid #eeeeee !important;
-    padding: 8px 15px !important;
-    border-radius: 5px !important;
-}
-.threshold-label {
-    color: #ef4444; font-size: 0.75rem; font-weight: bold;
-    display: block; margin-top: -10px; margin-bottom: 5px;
-}
-.doc-box {
-    background-color: #f0fdf4; border: 1px solid #bbf7d0;
-    padding: 15px; border-radius: 5px;
-    margin-top: 10px; margin-bottom: 10px;
-}
-.escp-banner {
-    background-color: #002349; color: #ffffff;
-    padding: 12px; border-radius: 4px; text-align: center;
-    margin-top: 5px; margin-bottom: 15px; font-size: 0.85rem;
-    border-left: 4px solid #d4af37;
-}
-</style>
-"""
-
-
-# ── INITIALISATION & MISE À JOUR DU SESSION STATE ────────────────────────────
-def init_session_state():
-    if "history" not in st.session_state:
-        st.session_state.history = {
-            "time": list(range(30)),
-            "temp": [67.0] * 30,
-            "vib":  [0.8]  * 30,
-            "pres": [4.4]  * 30,
-            "rul":  [72.0] * 30,
-        }
-    defaults = {
-        "base_temp": 67.0,
-        "base_vib":  0.8,
-        "base_pres": 4.4,
-        "base_cur":  20.7,
-        "tick":      757,
-        "running":   True,
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-
-def update_sensors():
-    """Met à jour les capteurs et retourne (c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct)."""
-    if st.session_state.running:
-        st.session_state.tick += 1
-        c_temp = st.session_state.base_temp + np.random.uniform(-0.5,  0.5)
-        c_vib  = max(0.1, st.session_state.base_vib  + np.random.uniform(-0.05, 0.05))
-        c_pres = max(0.1, st.session_state.base_pres + np.random.uniform(-0.05, 0.05))
-        c_cur  = max(0.0, st.session_state.base_cur  + np.random.uniform(-0.2,  0.2))
-
-        stress = max(0, (c_temp - 60) / 50 * 0.4 + (c_vib / 5) * 0.3 + (c_pres / 8) * 0.3)
-        c_rul  = max(0, int(72 * (1 - stress ** 1.2)))
-
-        for key, val in zip(["temp", "vib", "pres", "rul"], [c_temp, c_vib, c_pres, c_rul]):
-            st.session_state.history[key].append(val)
-        st.session_state.history["time"].append(st.session_state.tick)
-
-        for k in st.session_state.history:
-            if len(st.session_state.history[k]) > 30:
-                st.session_state.history[k].pop(0)
-    else:
-        c_temp = st.session_state.history["temp"][-1]
-        c_vib  = st.session_state.history["vib"][-1]
-        c_pres = st.session_state.history["pres"][-1]
-        c_cur  = st.session_state.base_cur
-        c_rul  = st.session_state.history["rul"][-1]
-
-    r_status    = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
-    rul_pct     = float(max(0.0, min(1.0, c_rul / 72.0)))
-    return c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct
+def get_prochaine_maintenance(equipement):
+    res = notion.databases.query(
+        database_id=DB_MAINTENANCE,
+        filter={"and": [
+            {"property": "Équipement", "rich_text": {"contains": equipement}},
+            {"property": "Statut", "select": {"equals": "Planifiée"}}
+        ]},
+        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
+    )
+    return res["results"][0] if res["results"] else None
