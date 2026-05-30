@@ -1,27 +1,9 @@
 import streamlit as st
 import numpy as np
-import plotly.graph_objects as go
 import time
-import requests
 
-# 1. Configuration de la page principale
+# Configuration de la page principale
 st.set_page_config(page_title="ResilientFlow AI - Prescriptive Dashboard", layout="wide")
-
-# ── CONFIGURATION DU RÉPERTOIRE GITHUB ──────────────────────────────────────
-GITHUB_USER = "VOTRE_NOM_UTILISATEUR_GITHUB"
-GITHUB_REPO = "maintenance-knowledge-base"
-GITHUB_BRANCH = "main"
-
-def get_github_file(path, is_json=False):
-    url = "https://raw.githubusercontent.com/" + GITHUB_USER + "/" + GITHUB_REPO + "/" + GITHUB_BRANCH + "/" + path
-    try:
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            return response.json() if is_json else response.text
-        else:
-            return None
-    except Exception:
-        return None
 
 # ── STYLE CSS GLOBAL & SÉCURISÉ ─────────────────────────────────────────────
 st.markdown("""
@@ -42,7 +24,6 @@ st.markdown("""
         margin-top: 10px;
         margin-bottom: 10px;
     }
-    /* Style pour la bannière académique de maintenance */
     .escp-banner {
         background-color: #002349;
         color: #ffffff;
@@ -57,22 +38,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ── DONNÉES DE CONTEXTE SIMULÉES (US-02 du Backlog) ─────────────────────────
-CONTEXTE_USINE = {
-    "production": {
-        "ordre_fabrication_actif": "OF-2026-89A",
-        "ligne_concerne": "Ligne 2",
-        "cout_arret_heure": 6500
-    },
-    "equipe": {
-        "technicien_recommande": "Lionel (Habilité Mécanique/Hydraulique - Charge : 32h/40h)",
-        "technicien_secondaire": "Marc D. (Habilité Électricité - Surcharge : 39h/40h)"
-    },
-    "stocks": {
-        "pieces_disponibles": "Joints d'étanchéité P17 (En stock : 2) | Roulements (Stock : 0 - Commande en cours)"
-    }
-}
-
 # ── INITIALISATION DU SESSION STATE (MOTEUR DE SIMULATION) ──────────────────
 if 'history' not in st.session_state:
     st.session_state.history = {"time": list(range(30)), "temp": [67.0]*30, "vib": [0.8]*30, "pres": [4.4]*30, "rul": [72.0]*30}
@@ -83,7 +48,7 @@ if 'base_cur' not in st.session_state: st.session_state.base_cur = 20.7
 if 'tick' not in st.session_state: st.session_state.tick = 757
 if 'running' not in st.session_state: st.session_state.running = True
 
-# ── MISE À JOUR DES CAPTEURS ET CALCUL DU RUL (MOTEUR US-03) ────────────────
+# ── MISE À JOUR DES CAPTEURS ET CALCUL DU RUL ───────────────────────────────
 if st.session_state.running:
     st.session_state.tick += 1
     c_temp = st.session_state.base_temp + np.random.uniform(-0.5, 0.5)
@@ -108,17 +73,14 @@ else:
     c_cur = st.session_state.base_cur
     c_rul = st.session_state.history["rul"][-1]
 
-r_status = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
-rul_percentage = float(max(0.0, min(1.0, c_rul / 72.0)))
+# Stockage temporaire pour les autres pages
+st.session_state.c_temp = c_temp
+st.session_state.c_vib = c_vib
+st.session_state.c_pres = c_pres
+st.session_state.c_cur = c_cur
+st.session_state.c_rul = c_rul
 
-# ── BARRE LATÉRALE : IDENTITÉ ESCP & NAVIGATION ─────────────────────────────
-# Affichage sécurisé du logo ESCP via sa chaîne base64
-st.sidebar.markdown(
-    '<img src="data:image/png;base64,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勃逊特Flow" style="width:100%; border-radius:4px; max-width:260px; display:block; margin:auto;">', 
-    unsafe_allow_html=True
-)
-
-# Ajout de la bannière de sujet de maintenance
+# Barre latérale commune pour le contrôle
 st.sidebar.markdown("""
     <div class="escp-banner">
         🎓 <b>Projet de Fin d'Études ESCP</b><br>
@@ -127,231 +89,22 @@ st.sidebar.markdown("""
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("### ResilientFlow AI\n*Couche Prescriptive v1*")
-
-profil = st.sidebar.selectbox(
-    "👤 Sélectionner le profil utilisateur :",
-    ["🔧 Lionel (Terrain)", "📋 Sophie (Manager)", "📊 Antoine (Directeur)", "🛡️ Leila (HSE)"]
-)
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("**Contrôle du Flux Live**")
 if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True):
     st.session_state.running = not st.session_state.running
 
-st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
-st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
-st.sidebar.caption("RUL estimé : " + str(c_rul) + " heures")
+st.sidebar.caption(f"Statut machine : Pompe P-17 | RUL : {c_rul}h")
 
-# ────────────────────────────────────────────────────────────────────────────
-# 🔧 PROFIL 1 : LIONEL (TECHNICIEN TERRAIN)
-# ────────────────────────────────────────────────────────────────────────────
-if profil == "🔧 Lionel (Terrain)":
-    st.markdown("### 🔧 Terminal Opérationnel de Terrain — Lionel")
-    
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("TEMPÉRATURE", "{:.1f} °C".format(c_temp))
-    m2.metric("VIBRATION", "{:.1f} mm/s".format(c_vib))
-    m3.metric("PRESSION", "{:.1f} bar".format(c_pres))
-    m4.metric("COURANT", "{:.1f} A".format(c_cur))
-    
-    st.markdown("---")
-    
-    col_l1, col_l2 = st.columns([3, 1])
-    col_l1.markdown("**Durée de vie résiduelle (RUL) calculée**")
-    col_l2.markdown("<p style='text-align: right; margin: 0;'><b>" + str(c_rul) + " h</b> (" + r_status + ")</p>", unsafe_allow_html=True)
-    st.progress(rul_percentage)
-    
-    lbl1, lbl2, lbl3, lbl4 = st.columns([1, 1, 1, 1])
-    lbl1.caption("0h (Panne)")
-    lbl2.caption("⚠️ Seuil Agent : 24h")
-    lbl3.caption("🔔 Alerte Seuil : 48h")
-    lbl4.markdown("<p style='text-align: right; font-size: 0.8rem; color: gray; margin: 0;'>72h (Nominal)</p>", unsafe_allow_html=True)
-    
-    if c_rul <= 24:
-        st.error("🚨 **ALERTE RESILIENTFLOW AI : INTERVENTION GUIDÉE DIRECTE (LIVE GITHUB)**")
-        machine_info = get_github_file("data/POMPE_P17/info.json", is_json=True)
-        if machine_info:
-            st.caption("🤖 *Matériel identifié : " + machine_info.get("modele") + " | Zone : " + machine_info.get("emplacement") + "*")
-        
-        has_doc = False
-        if c_temp >= 110:
-            content = get_github_file("data/POMPE_P17/surchauffe.md")
-            if content:
-                st.markdown("<div class='doc-box'>" + content + "</div>", unsafe_allow_html=True)
-                has_doc = True
-        if c_vib >= 4.5:
-            content = get_github_file("data/POMPE_P17/vibration.md")
-            if content:
-                st.markdown("<div class='doc-box'>" + content + "</div>", unsafe_allow_html=True)
-                has_doc = True
-        if c_pres >= 7.0:
-            content = get_github_file("data/POMPE_P17/pression.md")
-            if content:
-                st.markdown("<div class='doc-box'>" + content + "</div>", unsafe_allow_html=True)
-                has_doc = True
-        if not has_doc:
-            st.warning("ℹ️ Extraction automatique des fiches manuels techniques en cours (ou dépôt distant non configuré).")
-    else:
-        st.success("🤖 **Agent AI** : Surveillance en cours. Aucune ligne de procédure d'urgence requise à l'écran.")
-        
-    st.markdown("---")
-    
-    main_col_charts, main_col_sliders, main_col_scenarios = st.columns([2, 1, 1])
-    
-    with main_col_charts:
-        st.markdown("##### 📈 Courbes de tendance")
-        def plot_small(title, data, color, unit):
-            fig = go.Figure(go.Scatter(x=st.session_state.history["time"], y=data, mode='lines', line=dict(color=color, width=2.5)))
-            title_text = "<b>" + title + "</b> (" + "{:.1f}".format(data[-1]) + " " + unit + ")"
-            fig.update_layout(title=title_text, height=110, margin=dict(l=0,r=0,t=25,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(showgrid=True, gridcolor='#f1f1f1'))
-            return fig
-        st.plotly_chart(plot_small("Température", st.session_state.history["temp"], "#ef4444", "°C"), use_container_width=True)
-        st.plotly_chart(plot_small("Vibration", st.session_state.history["vib"], "#f59e0b", "mm/s"), use_container_width=True)
-        st.plotly_chart(plot_small("Pression", st.session_state.history["pres"], "#3b82f6", "bar"), use_container_width=True)
-        
-    with main_col_sliders:
-        st.markdown("##### ⌨️ Injection manuelle")
-        st.session_state.base_temp = st.slider("Température", 60, 140, int(st.session_state.base_temp), label_visibility="collapsed")
-        st.markdown("<span class='threshold-label'>Seuil : 110°C</span>", unsafe_allow_html=True)
-        st.session_state.base_vib = st.slider("Vibration", 0.0, 8.0, float(st.session_state.base_vib), label_visibility="collapsed")
-        st.markdown("<span class='threshold-label'>Seuil : 4.5 mm/s</span>", unsafe_allow_html=True)
-        st.session_state.base_pres = st.slider("Pression", 0.0, 10.0, float(st.session_state.base_pres), label_visibility="collapsed")
-        st.markdown("<span class='threshold-label'>Seuil : 7.0 bar</span>", unsafe_allow_html=True)
-        
-    with main_col_scenarios:
-        st.markdown("##### 🎭 Scénarios")
-        if st.button("✅ Mode Nominal", use_container_width=True):
-            st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 67.0, 0.8, 4.4, 21
-        if st.button("🔥 Surchauffe Moteur", use_container_width=True):
-            st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 115.0, 1.2, 4.5, 22
-        if st.button("⚙️ Roulement Dégradé", use_container_width=True):
-            st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 75.0, 5.2, 4.4, 21
-        if st.button("💧 Pression Instable", use_container_width=True):
-            st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 68.0, 1.0, 7.8, 21
-        if st.button("⚠️ Défaillance P-17", type="primary", use_container_width=True):
-            st.session_state.base_temp, st.session_state.base_vib, st.session_state.base_pres, st.session_state.base_cur = 125.0, 6.5, 8.5, 32
+# Contenu de l'accueil
+st.title("🚀 Bienvenue sur la plateforme ResilientFlow AI")
+st.markdown("---")
+st.markdown("### 🛠️ Mode d'emploi pour l'équipe de développement :")
+st.info("""
+1. **Ne touchez plus à ce fichier principal** (`streamlit_app.py`).
+2. Allez dans le dossier `pages/` sur GitHub pour modifier uniquement votre interface.
+3. Utilisez le menu de gauche pour naviguer d'une page à l'autre et tester vos changements.
+""")
 
-# ────────────────────────────────────────────────────────────────────────────
-# 📋 PROFIL 2 : SOPHIE (MANAGER MAINTENANCE)
-# ────────────────────────────────────────────────────────────────────────────
-elif profil == "📋 Sophie (Manager)":
-    st.markdown("### 📋 Espace d'Arbitrage et Pilotage des Ressources — Sophie")
-    st.markdown("*Résolution des conflits de planification (Equipes, Pièces détachées, Fenêtres de production).*")
-    
-    if c_rul <= 24:
-        st.error("🚨 **ALERTE CRITIQUE POMPE P-17 : Arbitrage requis immédiatement**")
-        
-        c_prod, c_stock = st.columns(2)
-        with c_prod:
-            st.info("**Contexte de Production Actif :**\n\n• Ordre en cours : " + CONTEXTE_USINE["production"]["ordre_fabrication_actif"] + "\n\n• Ligne impactée : " + CONTEXTE_USINE["production"]["ligne_concerne"] + "\n\n• Coût d'arrêt horaire : " + str(CONTEXTE_USINE["production"]["cout_arret_heure"]) + " €/h")
-        with c_stock:
-            st.warning("**Disponibilité Pièces en Magasin :**\n\n" + CONTEXTE_USINE["stocks"]["pieces_disponibles"])
-            
-        st.markdown("---")
-        
-        st.markdown("#### 🔮 Simulateur d'impact sur la planification")
-        action_planif = st.radio("Sélectionner une option d'ordonnancement :", [
-            "🎯 Intervenir immédiatement (Arrêt court coordonné avec la prod)",
-            "⏳ Reporter la maintenance à la fin de la semaine prochaine"
-        ])
-        
-        if action_planif == "⏳ Reporter la maintenance à la fin de la semaine prochaine":
-            st.markdown("<div style='background-color:#fef2f2; border-left:5px solid #ef4444; padding:15px; border-radius:4px;'>"
-                        "❌ **RISQUE DE CASSE EN EXPLOITATION DIRECTE : 87%**<br>"
-                        "Le RUL calculé par l'agent AI s'épuisera avant la date visée.<br>"
-                        "<b>Perte de marge sèche projetée : 45 500 €</b> (7 heures d'arrêt non maîtrisé en plein pic de charge).</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div style='background-color:#f0fdf4; border-left:5px solid #10b981; padding:15px; border-radius:4px;'>"
-                        "✅ **STRATÉGIE SÉCURISÉE (Arbitrage validé par l'IA)**<br>"
-                        "Arrêt planifié en période creuse. La production bascule automatiquement sur la ligne de secours.<br>"
-                        "<b>Coût financier maîtrisé : 0 € de pénalités.</b></div>", unsafe_allow_html=True)
-                        
-        st.markdown("---")
-        
-        st.markdown("#### 👥 Gestion de la charge et assignation d'équipe")
-        st.write("L'agent analyse les profils pour recommander le technicien disponible possédant le bon niveau d'accréditation.")
-        st.success("👉 **Affectation optimale trouvée :** " + CONTEXTE_USINE["equipe"]["technicien_recommande"])
-        st.caption("Alternative non retenue : " + CONTEXTE_USINE["equipe"]["technicien_secondaire"])
-        
-        if st.button("Confirmer l'affectation et envoyer l'ordre de travail", use_container_width=True):
-            st.success("Ordre d'intervention généré. Fiche technique GitHub poussée sur le terminal terrain de Lionel.")
-    else:
-        st.success("✅ **Unité B nominale.** L'agent IA n'a détecté aucun goulot d'étranglement ni besoin d'arbitrage en urgence.")
-
-# ────────────────────────────────────────────────────────────────────────────
-# 📊 PROFIL 3 : ANTOINE (DIRECTEUR TECHNIQUE)
-# ────────────────────────────────────────────────────────────────────────────
-elif profil == "📊 Antoine (Directeur)":
-    st.markdown("### 📊 Indicateurs Stratégiques et ROI Financement — Antoine")
-    st.markdown("*Suivi consolidé de la performance industrielle et aide à la décision d'investissement (CAPEX vs OPEX).*")
-    
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Pertes de production évitées", "312 000 €", delta="+14 alertes anticipées")
-    k2.metric("Taux de Disponibilité (OEE)", "96.4 %", delta="+2.1 % vs Année N-1")
-    k3.metric("ROI Couche Prescriptive", "7.6 x", delta="Target CODIR dépassée")
-    
-    st.markdown("---")
-    
-    st.markdown("#### 🔮 Analyse prédictive du plan de renouvellement matériel (Pompe P-17)")
-    st.write("En croisant la vitesse d'usure calculée par le modèle RUL et l'augmentation de coût des rechanges, l'agent simule la meilleure décision financière.")
-    
-    col_strat, col_graph = st.columns([1, 2])
-    with col_strat:
-        mode_invest = st.selectbox("Simuler un scénario budgétaire :", [
-            "Conserver la pompe P-17 (Continuer en maintenance prescriptive)",
-            "Investir dans le remplacement par la pompe neuve AlphaFlow-18"
-        ])
-        st.info("**Avis de l'agent AI :** Bien que la couche prescriptive repousse la panne de la P-17, l'équipement approche de sa limite de fatigue structurelle.")
-    
-    with col_graph:
-        fig_cap = go.Figure()
-        timeline = ['Actuel', 'Année +1', 'Année +2', 'Année +3']
-        if "Conserver" in mode_invest:
-            fig_cap.add_trace(go.Scatter(x=timeline, y=[12000, 29000, 55000, 89000], name="Coût Opex Cumulé (Pièces + Maintenance)", line=dict(color='#f59e0b', width=3)))
-            fig_cap.update_layout(title="Projection des dépenses cumulées (Subies en EUR)", height=200, margin=dict(l=0,r=0,t=30,b=0))
-            st.plotly_chart(fig_cap, use_container_width=True)
-            st.caption("🔴 **Alerte :** Explosion des coûts de rechange à partir de l'année +2 due à l'obsolescence.")
-        else:
-            fig_cap.add_trace(go.Scatter(x=timeline, y=[80000, 82000, 84000, 86000], name="Plan d'investissement Capex (Amorti)", line=dict(color='#10b981', width=3)))
-            fig_cap.update_layout(title="Frais d'acquisition et intégration (EUR)", height=200, margin=dict(l=0,r=0,t=30,b=0))
-            st.plotly_chart(fig_cap, use_container_width=True)
-            st.caption("Gains validés : Point mort financier atteint dès le 14ème mois grâce au zéro-panne.")
-
-# ────────────────────────────────────────────────────────────────────────────
-# 🛡️ PROFIL 4 : LEILA (RESPONSABLE HSE)
-# ────────────────────────────────────────────────────────────────────────────
-elif profil == "🛡️ Leila (HSE)":
-    st.markdown("### 🛡️ Conformité Réglementaire, Sécurité & Audit HSE — Leila")
-    st.markdown("*Intégration native de la sécurité au cœur des interventions critiques et génération automatique de preuves d'audits.*")
-    
-    if c_rul <= 24:
-        st.warning("⚡ **Protocole de Sécurité Automatique activé (Norme ISO 45001)**")
-        st.markdown("#### 📋 Matrice des risques et dotation réglementaire requise")
-        st.write("L'agent AI a analysé la signature de l'anomalie en cours et pousse automatiquement les exigences de sécurité adaptées :")
-        
-        if c_temp >= 110:
-            st.markdown("🧱 **Risque Thermique Élevé (Surchauffe Stator) :**")
-            st.markdown("- [ ] **EPI Obligatoire :** Gants isolants Haute Température (Norme EN 407).")
-            st.markdown("- [ ] **Consigne :** Attendre le message de confirmation de baisse sous 45°C avant ouverture.")
-        if c_vib >= 4.5:
-            st.markdown("⚙️ **Risque Mécanique Élevé (Défaut Palier) :**")
-            st.markdown("- [ ] **EPI Obligatoire :** Protection oculaire renforcée et casque anti-bruit (Vibrations acoustiques).")
-            st.markdown("- [ ] **Consigne :** Vérifier l'ancrage et l'absence de micro-fissures sur le châssis.")
-            
-        st.markdown("🔒 **Procédure LOTO systématique :** Sectionneur d'alimentation cadenassé en cellule BT.")
-    else:
-        st.success("✅ **Zéro alerte active.** Les conditions de travail et la sécurité de l'Unité B sont au niveau nominal.")
-        
-    st.markdown("---")
-    
-    st.markdown("#### 📄 Registre réglementaire et Dossier de Preuve ISO 45001")
-    st.write("La couche prescriptive enregistre de façon inaltérable que chaque technicien envoyé sur une anomalie a reçu les consignes et la liste d'EPI appropriés avant d'ouvrir sa boîte à outils.")
-    
-    if st.button("📥 Générer le dossier de conformité pour l'organisme de certification", use_container_width=True):
-        st.success("Dossier de preuve réglementaire exporté avec succès sous la référence `RF_AUDIT_ISO45001_P17.pdf`.")
-        st.caption("Statut : Horodatage certifié | Signature électronique de l'agent AI validée.")
-
-# ── AUTO-REFRESH DE L'APPLICATION STREAMLIT ─────────────────────────────────
+# Auto-refresh de l'accueil
 if st.session_state.running:
     time.sleep(1)
     st.rerun()
