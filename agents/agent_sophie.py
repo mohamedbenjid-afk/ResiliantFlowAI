@@ -1,181 +1,227 @@
 """
-agents/agent_lionel.py — Agent prescriptif de Lionel (Technicien Terrain)
-Rôle : diagnostiquer une anomalie capteur, identifier la procédure d'intervention,
-       vérifier les pièces disponibles et guider Lionel étape par étape sur le terrain.
+agents/agent_sophie.py — Agent d'arbitrage de Sophie (Manager Maintenance)
+Rôle : évaluer l'impact production d'une alerte, arbitrer entre intervention
+       immédiate et report, optimiser l'assignation des techniciens.
 
-Intégration dans pages/1_Lionel.py :
-    from agents.agent_lionel import run_agent_lionel
-    prescription = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+Intégration dans pages/2_Sophie.py :
+    from agents.agent_sophie import run_agent_sophie
+    arbitrage = run_agent_sophie(c_rul, equipement="Pompe P-17")
 """
 
 import os, json
 import anthropic
 from notion_client import Client
 
-# ── CLIENTS ───────────────────────────────────────────────────────────────────
-_notion   = Client(auth=os.environ["NOTION_TOKEN"])
-_claude   = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def _get_secret(key):
+    try:
+        import streamlit as st
+        return st.secrets[key]
+    except Exception:
+        return os.environ.get(key, "")
 
-DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
+_notion = Client(auth=_get_secret("NOTION_TOKEN"))
+_claude = anthropic.Anthropic(api_key=_get_secret("ANTHROPIC_API_KEY"))
+
+DB_OF          = "6777a9e0-4c76-49ca-a3d4-fb20a579cb2d"
 DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
 DB_STOCK       = "7229437a-027a-440f-a7be-5e37157f3b8d"
+DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
 
 
-# ── HELPERS NOTION ────────────────────────────────────────────────────────────
+# ── HELPERS ───────────────────────────────────────────────────────────────────
 def _text(prop):
     if not prop: return ""
     t = prop.get("type")
-    if t == "title":       return "".join(r["plain_text"] for r in prop.get("title", []))
-    if t == "rich_text":   return "".join(r["plain_text"] for r in prop.get("rich_text", []))
-    if t == "select":      s = prop.get("select"); return s["name"] if s else ""
-    if t == "multi_select":return ", ".join(o["name"] for o in prop.get("multi_select", []))
-    if t == "number":      return prop.get("number")
-    if t == "date":        d = prop.get("date"); return d["start"] if d else ""
+    if t == "title":        return "".join(r["plain_text"] for r in prop.get("title", []))
+    if t == "rich_text":    return "".join(r["plain_text"] for r in prop.get("rich_text", []))
+    if t == "select":       s = prop.get("select"); return s["name"] if s else ""
+    if t == "multi_select": return ", ".join(o["name"] for o in prop.get("multi_select", []))
+    if t == "number":       return prop.get("number")
+    if t == "date":         d = prop.get("date"); return d["start"] if d else ""
     return ""
 
 def _p(page): return page.get("properties", {})
 
 
-# ── OUTILS TERRAIN (ce dont Lionel a besoin sur le terrain) ───────────────────
+# ── OUTILS PLANIFICATION (ce dont Sophie a besoin pour arbitrer) ──────────────
 
-def get_fiche_equipement(nom: str) -> dict:
-    """Seuils, signe d'usure connus, technicien référent."""
+def get_impact_production(equipement: str) -> dict:
+    """OF en cours + OF planifiés sur cet équipement avec coût d'arrêt et ligne de secours."""
     res = _notion.databases.query(
-        database_id=DB_EQUIPEMENTS,
-        filter={"property": "Équipement", "title": {"contains": nom}}
+        database_id=DB_OF,
+        filter={"property": "Équipement concerné", "rich_text": {"contains": equipement}},
+        sorts=[{"property": "Statut", "direction": "ascending"}]
     )
-    if not res["results"]: return {"erreur": f"'{nom}' non trouvé"}
-    p = _p(res["results"][0])
+    of_en_cours, of_planifies = [], []
+    for page in res["results"]:
+        p = _p(page)
+        entry = {
+            "of":              _text(p.get("Ordre de Fabrication")),
+            "statut":          _text(p.get("Statut")),
+            "produit":         _text(p.get("Produit fabriqué")),
+            "qte_cible":       _text(p.get("Quantité cible")),
+            "qte_realisee":    _text(p.get("Quantité réalisée")),
+            "cout_arret_h":    _text(p.get("Coût arrêt horaire (€)")),
+            "ligne_secours":   _text(p.get("Ligne de secours disponible")),
+            "date_fin_prevue": _text(p.get("Date fin prévue")),
+            "responsable":     _text(p.get("Responsable OF")),
+        }
+        if _text(p.get("Statut")) == "En cours":
+            of_en_cours.append(entry)
+        else:
+            of_planifies.append(entry)
     return {
-        "equipement":     _text(p.get("Équipement")),
-        "statut":         _text(p.get("Statut")),
-        "fabricant":      _text(p.get("Fabricant")),
-        "modele":         _text(p.get("Modèle")),
-        "seuil_temp":     _text(p.get("Seuil Température (°C)")),
-        "seuil_vib":      _text(p.get("Seuil Vibration (mm/s)")),
-        "seuil_pres":     _text(p.get("Seuil Pression (bar)")),
-        "rul_nominal_h":  _text(p.get("RUL nominal (h)")),
-        "heures_total":   _text(p.get("Heures de fonctionnement total")),
-        "notes_usure":    _text(p.get("Notes")),
+        "of_en_cours":  of_en_cours  or [{"info": "Aucun OF en cours"}],
+        "of_planifies": of_planifies or [{"info": "Aucun OF planifié"}],
+        "total_of":     len(res["results"]),
     }
 
-def get_procedure_intervention(equipement: str, type_anomalie: str) -> dict:
-    """Procédure d'intervention planifiée la plus proche pour ce type d'anomalie."""
+def get_charge_techniciens(equipement: str) -> list:
+    """Liste des techniciens assignés aux interventions planifiées — pour détecter les surcharges."""
     res = _notion.databases.query(
         database_id=DB_MAINTENANCE,
         filter={"and": [
-            {"property": "Équipement",  "rich_text": {"contains": equipement}},
-            {"property": "Statut",      "select":    {"equals": "Planifiée"}}
+            {"property": "Équipement", "rich_text": {"contains": equipement}},
+            {"property": "Statut",     "select":    {"not_equals": "Réalisée"}}
+        ]}
+    )
+    techniciens = {}
+    for page in res["results"]:
+        p = _p(page)
+        tech   = _text(p.get("Technicien assigné")) or "Non assigné"
+        duree  = float(_text(p.get("Durée estimée (h)")) or 0)
+        statut = _text(p.get("Statut"))
+        if tech not in techniciens:
+            techniciens[tech] = {"technicien": tech, "interventions": [], "charge_totale_h": 0}
+        techniciens[tech]["interventions"].append({
+            "intervention": _text(p.get("Intervention")),
+            "priorite":     _text(p.get("Priorité")),
+            "date":         _text(p.get("Date planifiée")),
+            "duree_h":      duree,
+            "statut":       statut,
+        })
+        techniciens[tech]["charge_totale_h"] += duree
+    return list(techniciens.values()) or [{"info": "Aucune intervention planifiée"}]
+
+def get_fenetre_maintenance(equipement: str) -> list:
+    """Toutes les interventions planifiées avec leurs dates — pour trouver un créneau d'arrêt optimal."""
+    res = _notion.databases.query(
+        database_id=DB_MAINTENANCE,
+        filter={"and": [
+            {"property": "Équipement", "rich_text": {"contains": equipement}},
+            {"property": "Statut",     "select":    {"equals": "Planifiée"}}
         ]},
         sorts=[{"property": "Date planifiée", "direction": "ascending"}]
     )
-    if not res["results"]: return {"info": "Aucune procédure planifiée trouvée"}
-    # Cherche d'abord une intervention liée au type d'anomalie, sinon prend la plus proche
-    for page in res["results"]:
-        p = _p(page)
-        titre = _text(p.get("Intervention")).lower()
-        if any(kw in titre for kw in [type_anomalie.lower(), "joint", "roulement", "vibr", "surchauf"]):
-            return _format_maintenance(p)
-    return _format_maintenance(_p(res["results"][0]))  # fallback: la plus proche
+    return [
+        {
+            "intervention":   _text(_p(p).get("Intervention")),
+            "priorite":       _text(_p(p).get("Priorité")),
+            "date_planifiee": _text(_p(p).get("Date planifiée")),
+            "duree_h":        _text(_p(p).get("Durée estimée (h)")),
+            "technicien":     _text(_p(p).get("Technicien assigné")),
+            "cout_estime":    _text(_p(p).get("Coût estimé (€)")),
+        }
+        for p in res["results"]
+    ] or [{"info": "Aucune fenêtre planifiée"}]
 
-def _format_maintenance(p: dict) -> dict:
-    return {
-        "intervention":   _text(p.get("Intervention")),
-        "type":           _text(p.get("Type d'intervention")),
-        "priorite":       _text(p.get("Priorité")),
-        "date_planifiee": _text(p.get("Date planifiée")),
-        "duree_h":        _text(p.get("Durée estimée (h)")),
-        "technicien":     _text(p.get("Technicien assigné")),
-        "habilitations":  _text(p.get("Habilitation requise")),
-        "composants":     _text(p.get("Composants à remplacer")),
-        "loto_requis":    _text(p.get("Procédure LOTO requise")),
-        "cout_estime":    _text(p.get("Coût estimé (€)")),
-        "description":    _text(p.get("Description")),
-    }
-
-def get_disponibilite_piece(nom_piece: str) -> dict:
-    """Stock et emplacement magasin d'une pièce — ce que Lionel doit aller chercher."""
+def get_pieces_critiques_manquantes(equipement: str) -> list:
+    """Pièces en rupture ou stock bas qui bloqueraient une intervention immédiate."""
     res = _notion.databases.query(
         database_id=DB_STOCK,
-        filter={"property": "Composant", "title": {"contains": nom_piece}}
+        filter={"and": [
+            {"property": "Équipements compatibles", "rich_text": {"contains": equipement}},
+            {"property": "Statut stock", "select": {"does_not_equal": "OK"}}
+        ]}
     )
-    if not res["results"]: return {"erreur": f"'{nom_piece}' non trouvé en magasin"}
-    p = _p(res["results"][0])
-    stock = _text(p.get("Stock actuel"))
-    seuil = _text(p.get("Stock minimum (seuil alerte)"))
-    return {
-        "composant":     _text(p.get("Composant")),
-        "stock_actuel":  stock,
-        "statut_stock":  _text(p.get("Statut stock")),
-        "emplacement":   _text(p.get("Emplacement magasin")),
-        "critique":      _text(p.get("Critique")),
-        "delai_reappro": _text(p.get("Délai réappro (jours)")),
-        "notes":         _text(p.get("Notes")),
-        "dispo_immediate": int(stock or 0) > 0,
-    }
+    return [
+        {
+            "composant":     _text(_p(p).get("Composant")),
+            "statut_stock":  _text(_p(p).get("Statut stock")),
+            "stock_actuel":  _text(_p(p).get("Stock actuel")),
+            "delai_reappro": _text(_p(p).get("Délai réappro (jours)")),
+            "critique":      _text(_p(p).get("Critique")),
+            "notes":         _text(_p(p).get("Notes")),
+        }
+        for p in res["results"]
+    ] or [{"info": "Aucune pièce critique manquante — stock OK pour intervention"}]
 
 
 # ── OUTILS DÉCLARÉS À L'AGENT ─────────────────────────────────────────────────
 TOOLS = [
     {
-        "name": "get_fiche_equipement",
-        "description": "Récupère la fiche technique de l'équipement : seuils d'alerte, heures de fonctionnement, signes d'usure connus, statut actuel.",
-        "input_schema": {"type": "object", "properties": {"nom": {"type": "string", "description": "Nom de l'équipement ex: 'Pompe P-17'"}}, "required": ["nom"]}
+        "name": "get_impact_production",
+        "description": "Récupère les OF en cours et planifiés sur cet équipement : coût d'arrêt horaire, ligne de secours disponible, dates de fin prévues. Permet d'évaluer le risque financier d'un arrêt.",
+        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
-        "name": "get_procedure_intervention",
-        "description": "Récupère la procédure d'intervention planifiée la plus pertinente : étapes, LOTO, habilitations requises, pièces à préparer.",
-        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}, "type_anomalie": {"type": "string", "description": "Nature du problème ex: 'vibration', 'surchauffe', 'pression'"}}, "required": ["equipement", "type_anomalie"]}
+        "name": "get_charge_techniciens",
+        "description": "Analyse la charge de travail de chaque technicien sur les interventions planifiées. Permet de détecter les surcharges et d'optimiser l'assignation.",
+        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
-        "name": "get_disponibilite_piece",
-        "description": "Vérifie si une pièce est disponible en magasin et indique son emplacement exact pour que Lionel puisse aller la chercher.",
-        "input_schema": {"type": "object", "properties": {"nom_piece": {"type": "string", "description": "Nom ou mot-clé de la pièce ex: 'joint', 'roulement', 'filtre'"}}, "required": ["nom_piece"]}
+        "name": "get_fenetre_maintenance",
+        "description": "Liste toutes les interventions planifiées avec leurs dates et durées. Permet de trouver un créneau d'arrêt optimal qui minimise l'impact sur la production.",
+        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
+    },
+    {
+        "name": "get_pieces_critiques_manquantes",
+        "description": "Identifie les pièces en rupture de stock ou en commande qui pourraient bloquer une intervention immédiate. Essentiel pour l'arbitrage du timing.",
+        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     }
 ]
 
 def _execute(name, inputs):
-    if name == "get_fiche_equipement":       return get_fiche_equipement(inputs["nom"])
-    if name == "get_procedure_intervention": return get_procedure_intervention(inputs["equipement"], inputs["type_anomalie"])
-    if name == "get_disponibilite_piece":    return get_disponibilite_piece(inputs["nom_piece"])
+    if name == "get_impact_production":          return get_impact_production(inputs["equipement"])
+    if name == "get_charge_techniciens":         return get_charge_techniciens(inputs["equipement"])
+    if name == "get_fenetre_maintenance":        return get_fenetre_maintenance(inputs["equipement"])
+    if name == "get_pieces_critiques_manquantes":return get_pieces_critiques_manquantes(inputs["equipement"])
     return {"erreur": f"Outil inconnu : {name}"}
 
 
 # ── PROMPT SYSTÈME ────────────────────────────────────────────────────────────
-SYSTEM = """Tu es l'assistant de terrain de Lionel, technicien habilité Mécanique/Hydraulique.
-Tu reçois des alertes capteurs en temps réel sur la Pompe P-17.
+SYSTEM = """Tu es l'assistant de Sophie, Manager Maintenance de l'Unité B.
+Tu analyses les alertes machine pour l'aider à prendre des décisions de planification.
 
-Ton rôle : guider Lionel avec des instructions claires et actionnables.
+Ton rôle : arbitrer entre intervention immédiate et report, en tenant compte de :
+- L'impact sur la production en cours (OF actifs, coût d'arrêt)
+- La disponibilité des techniciens et leur charge
+- La disponibilité des pièces nécessaires
+- Les fenêtres de maintenance déjà planifiées
+
 Format de réponse attendu :
-1. **Diagnostic** : quelle est la cause probable (1-2 phrases max)
-2. **Urgence** : niveau de priorité (Immédiat / Dans les 4h / Planifiable)
-3. **Avant d'intervenir** : EPI requis + LOTO si nécessaire
-4. **Étapes d'intervention** : liste numérotée, concrète
-5. **Pièces à préparer** : ce que Lionel doit sortir du magasin avec l'emplacement
+1. **Situation** : résumé de l'alerte et des contraintes identifiées
+2. **Option A — Intervention immédiate** : avantages, risques, coût estimé
+3. **Option B — Report planifié** : date suggérée, conditions requises, risque RUL
+4. **Recommandation** : quelle option privilégier et pourquoi
+5. **Actions à lancer maintenant** : liste concrète (contacter Lionel, commander pièce, etc.)
 
-Sois direct. Lionel est sur le terrain, pas derrière un bureau. Pas de blabla.
+Sois factuel. Chiffre les risques financiers quand tu le peux.
 """
 
 
-# ── FONCTION PRINCIPALE (appelée depuis pages/1_Lionel.py) ───────────────────
-def run_agent_lionel(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> str:
+# ── FONCTION PRINCIPALE (appelée depuis pages/2_Sophie.py) ───────────────────
+def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
+                     c_temp: float = None, c_vib: float = None) -> str:
     """
-    Lance l'agent Lionel avec les valeurs capteurs courantes.
-    Retourne la prescription terrain en texte Markdown.
+    Lance l'agent Sophie avec le RUL courant et le contexte machine.
+    Retourne l'arbitrage planification en texte Markdown.
     """
+    details = ""
+    if c_temp: details += f"\n- Température : {c_temp:.1f}°C"
+    if c_vib:  details += f"\n- Vibration   : {c_vib:.2f} mm/s"
+
     situation = (
-        f"ALERTE POMPE P-17 :\n"
-        f"- Température : {c_temp:.1f}°C (seuil 110°C)\n"
-        f"- Vibration   : {c_vib:.2f} mm/s (seuil 4.5 mm/s)\n"
-        f"- Pression    : {c_pres:.1f} bar (seuil 7.0 bar)\n"
-        f"- RUL estimé  : {c_rul}h\n\n"
-        f"Que dois-je faire ? Donne-moi les instructions d'intervention."
+        f"ALERTE MAINTENANCE — {equipement}\n"
+        f"- RUL estimé : {c_rul}h{details}\n\n"
+        f"Analyse l'impact production, la disponibilité des ressources "
+        f"et recommande la meilleure stratégie d'intervention."
     )
 
     messages = [{"role": "user", "content": situation}]
     while True:
         resp = _claude.messages.create(
-            model="claude-opus-4-5", max_tokens=1500,
+            model="claude-opus-4-5", max_tokens=1800,
             system=SYSTEM, tools=TOOLS, messages=messages
         )
         if resp.stop_reason == "end_turn":
@@ -193,4 +239,4 @@ def run_agent_lionel(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> 
 
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(run_agent_lionel(c_temp=117.0, c_vib=5.8, c_pres=4.6, c_rul=12))
+    print(run_agent_sophie(c_rul=18, equipement="Pompe P-17", c_temp=78.0, c_vib=5.8))
