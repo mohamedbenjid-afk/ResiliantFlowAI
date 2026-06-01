@@ -66,6 +66,8 @@ lbl4.markdown(
 
 # ── ALERTES & FICHES GITHUB ───────────────────────────────────────────────────
 if c_rul <= 24:
+    from agents.agent_lionel import run_agent_lionel with st.spinner("🤖 Agent analyse..."):
+        st.markdown(run_agent_lionel(c_temp, c_vib, c_pres, c_rul))
     st.error("🚨 **ALERTE RESILIENTFLOW AI : INTERVENTION GUIDÉE DIRECTE (LIVE GITHUB)**")
     machine_info = get_github_file("data/POMPE_P17/info.json", is_json=True)
     if machine_info:
@@ -74,9 +76,7 @@ if c_rul <= 24:
             " | Zone : " + machine_info.get("emplacement", "?") + "*"
         )
 
-    from agents.agent_lionel import run_agent_lionel
-    with st.spinner("🤖 Agent analyse..."):
-        st.markdown(run_agent_lionel(c_temp, c_vib, c_pres, c_rul))
+    
 
     has_doc = False
     if c_temp >= 110:
