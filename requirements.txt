@@ -1,1 +1,7 @@
+streamlit>=1.36.0
+numpy
 plotly
+requests
+anthropic
+notion-client
+python-dotenv
