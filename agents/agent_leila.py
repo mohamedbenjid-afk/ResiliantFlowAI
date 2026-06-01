@@ -1,24 +1,31 @@
 """
-agents/agent_antoine.py — Agent stratégique d'Antoine (Directeur Technique)
-Rôle : analyser les tendances de fiabilité, calculer le ROI de la maintenance
-       prescriptive, modéliser les décisions CAPEX vs OPEX.
+agents/agent_leila.py — Agent conformité HSE de Leila (Responsable HSE)
+Rôle : générer automatiquement les matrices de risques, les exigences EPI
+       et les preuves d'audit ISO 45001 à partir des données d'intervention.
 
-Intégration dans pages/3_Antoine.py :
-    from agents.agent_antoine import run_agent_antoine
-    analyse = run_agent_antoine(equipement="Pompe P-17")
+Intégration dans pages/4_Leila.py :
+    from agents.agent_leila import run_agent_leila
+    audit = run_agent_leila(c_temp, c_vib, c_pres, c_rul)
 """
 
 import os, json
+from datetime import date
 import anthropic
 from notion_client import Client
 
-_notion = Client(auth=os.environ["NOTION_TOKEN"])
-_claude = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def _get_secret(key):
+    try:
+        import streamlit as st
+        return st.secrets[key]
+    except Exception:
+        return os.environ.get(key, "")
 
-DB_OF          = "6777a9e0-4c76-49ca-a3d4-fb20a579cb2d"
+_notion = Client(auth=_get_secret("NOTION_TOKEN"))
+_claude = anthropic.Anthropic(api_key=_get_secret("ANTHROPIC_API_KEY"))
+
 DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
-DB_STOCK       = "7229437a-027a-440f-a7be-5e37157f3b8d"
 DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
+DB_STOCK       = "7229437a-027a-440f-a7be-5e37157f3b8d"
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -36,193 +43,258 @@ def _text(prop):
 def _p(page): return page.get("properties", {})
 
 
-# ── OUTILS STRATÉGIQUES (ce dont Antoine a besoin pour décider) ───────────────
+# ── RÉFÉRENTIEL HSE INTERNE (données réglementaires statiques) ────────────────
+EPI_PAR_RISQUE = {
+    "thermique":   ["Gants isolants HT (EN 407)", "Écran facial anti-chaleur", "Combinaison ignifugée"],
+    "mecanique":   ["Lunettes de protection (EN 166)", "Casque anti-bruit (EN 352)", "Gants anti-coupure (EN 388)"],
+    "hydraulique": ["Écran facial anti-projection", "Combinaison anti-projections", "Bottes de sécurité étanches"],
+    "electrique":  ["Gants isolants classe 2 (EN 60903)", "Écran facial arc électrique", "Vêtement arc flash"],
+    "standard":    ["Casque de sécurité (EN 397)", "Chaussures S3 (EN 345)", "Gants de travail (EN 388)"],
+}
 
-def get_bilan_equipement(nom: str) -> dict:
-    """Données d'usure et de vie restante pour évaluer la pertinence d'un remplacement."""
-    res = _notion.databases.query(
-        database_id=DB_EQUIPEMENTS,
-        filter={"property": "Équipement", "title": {"contains": nom}}
-    )
-    if not res["results"]: return {"erreur": f"'{nom}' non trouvé"}
-    p = _p(res["results"][0])
-    heures      = float(_text(p.get("Heures de fonctionnement total")) or 0)
-    rul_nominal = float(_text(p.get("RUL nominal (h)")) or 72)
-    return {
-        "equipement":        _text(p.get("Équipement")),
-        "statut":            _text(p.get("Statut")),
-        "fabricant":         _text(p.get("Fabricant")),
-        "modele":            _text(p.get("Modèle")),
-        "mise_en_service":   _text(p.get("Date de mise en service")),
-        "heures_total":      heures,
-        "rul_nominal_h":     rul_nominal,
-        "taux_usure_pct":    round(min(100, heures / (rul_nominal * 100) * 100), 1),
-        "notes":             _text(p.get("Notes")),
-    }
+NORMES_LOTO = {
+    "procedure": "ISO 50001 + NF EN 1037 — Condamnation et cadenassage",
+    "etapes": [
+        "1. Identifier toutes les sources d'énergie (électrique, hydraulique, pneumatique)",
+        "2. Informer les personnes concernées de l'arrêt",
+        "3. Éteindre l'équipement via la commande officielle",
+        "4. Condamner le sectionneur principal avec cadenas personnel",
+        "5. Dissiper les énergies résiduelles (décharge condensateurs, purge pression)",
+        "6. Vérifier l'absence d'énergie résiduelle (essai de mise en marche)",
+        "7. Apposer la consigne de sécurité visible",
+    ]
+}
 
-def get_historique_couts_maintenance(equipement: str) -> dict:
-    """Coûts cumulés de maintenance et tendance — pour calculer le point mort CAPEX."""
+
+# ── OUTILS HSE (ce dont Leila a besoin pour la conformité) ───────────────────
+
+def get_exigences_hse_intervention(equipement: str) -> dict:
+    """Habilitations requises et procédure LOTO pour les interventions planifiées."""
     res = _notion.databases.query(
         database_id=DB_MAINTENANCE,
-        filter={"property": "Équipement", "rich_text": {"contains": equipement}},
+        filter={"and": [
+            {"property": "Équipement", "rich_text": {"contains": equipement}},
+            {"property": "Statut",     "select":    {"equals": "Planifiée"}}
+        ]},
+        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
     )
-    toutes, realisees = [], []
-    cout_total_realise = 0
-    cout_total_planifie = 0
+    interventions_hse = []
     for page in res["results"]:
         p = _p(page)
-        statut = _text(p.get("Statut"))
-        cout   = float(_text(p.get("Coût estimé (€)")) or 0)
-        entry  = {
-            "intervention":   _text(p.get("Intervention")),
-            "type":           _text(p.get("Type d'intervention")),
-            "statut":         statut,
-            "priorite":       _text(p.get("Priorité")),
-            "date":           _text(p.get("Date planifiée")) or _text(p.get("Date réalisée")),
-            "duree_h":        _text(p.get("Durée estimée (h)")),
-            "cout_estime":    cout,
-        }
-        toutes.append(entry)
-        if statut == "Réalisée":
-            realisees.append(entry)
-            cout_total_realise += cout
-        else:
-            cout_total_planifie += cout
-
-    return {
-        "nb_interventions_total":    len(toutes),
-        "nb_interventions_realisees": len(realisees),
-        "cout_total_realise_eur":    cout_total_realise,
-        "cout_total_planifie_eur":   cout_total_planifie,
-        "cout_total_cumule_eur":     cout_total_realise + cout_total_planifie,
-        "detail_interventions":      toutes,
-    }
-
-def get_exposition_financiere_production(equipement: str) -> dict:
-    """Coût d'exposition totale si la machine tombe en panne non planifiée (tous OF impactés)."""
-    res = _notion.databases.query(
-        database_id=DB_OF,
-        filter={"property": "Équipement concerné", "rich_text": {"contains": equipement}}
-    )
-    exposition_totale = 0
-    details = []
-    for page in res["results"]:
-        p = _p(page)
-        cout_h = float(_text(p.get("Coût arrêt horaire (€)")) or 0)
-        qte_c  = float(_text(p.get("Quantité cible"))   or 0)
-        qte_r  = float(_text(p.get("Quantité réalisée")) or 0)
-        pct    = round((qte_r / qte_c * 100) if qte_c else 0, 1)
-        # Estimation : 7h d'arrêt non planifié en moyenne
-        perte_estimee = cout_h * 7
-        exposition_totale += perte_estimee
-        details.append({
-            "of":             _text(p.get("Ordre de Fabrication")),
-            "statut":         _text(p.get("Statut")),
-            "avancement_pct": pct,
-            "cout_arret_h":   cout_h,
-            "perte_7h":       perte_estimee,
-            "ligne_secours":  _text(p.get("Ligne de secours disponible")),
+        loto     = _text(p.get("Procédure LOTO requise"))
+        hab      = _text(p.get("Habilitation requise"))
+        priorite = _text(p.get("Priorité"))
+        interventions_hse.append({
+            "intervention":     _text(p.get("Intervention")),
+            "priorite":         priorite,
+            "date":             _text(p.get("Date planifiée")),
+            "technicien":       _text(p.get("Technicien assigné")),
+            "habilitations":    hab,
+            "loto_requis":      loto,
+            "duree_h":          _text(p.get("Durée estimée (h)")),
+            "risque_critique":  priorite in ("P1 - Critique", "P2 - Haute") or loto == "Oui",
         })
     return {
-        "exposition_financiere_totale_eur": exposition_totale,
-        "hypothese": "Arrêt non planifié de 7h en pic de charge",
-        "of_impactes": details,
+        "interventions_hse":  interventions_hse or [{"info": "Aucune intervention planifiée"}],
+        "nb_loto_requis":     sum(1 for i in interventions_hse if i["loto_requis"] == "Oui"),
+        "nb_risque_critique": sum(1 for i in interventions_hse if i["risque_critique"]),
+        "norme_loto":         NORMES_LOTO,
     }
 
-def get_etat_stock_strategique(equipement: str) -> dict:
-    """Valeur immobilisée en stock + pièces critiques manquantes — vision trésorerie."""
+def get_matrice_risques_capteurs(c_temp: float, c_vib: float, c_pres: float) -> dict:
+    """Génère la matrice de risques à partir des valeurs capteurs en temps réel."""
+    risques = []
+
+    if c_temp >= 110:
+        risques.append({
+            "type":      "Thermique",
+            "niveau":    "ÉLEVÉ" if c_temp >= 120 else "MODÉRÉ",
+            "valeur":    f"{c_temp:.1f}°C",
+            "seuil":     "110°C",
+            "cause":     "Surchauffe stator / garniture mécanique",
+            "epi":       EPI_PAR_RISQUE["thermique"],
+            "consignes": ["Attendre refroidissement < 45°C avant ouverture", "Ne pas toucher les surfaces"],
+            "norme":     "EN 563 — Températures de surface",
+        })
+
+    if c_vib >= 4.5:
+        risques.append({
+            "type":      "Mécanique",
+            "niveau":    "ÉLEVÉ" if c_vib >= 6.0 else "MODÉRÉ",
+            "valeur":    f"{c_vib:.2f} mm/s",
+            "seuil":     "4.5 mm/s",
+            "cause":     "Défaut palier / roulement dégradé",
+            "epi":       EPI_PAR_RISQUE["mecanique"],
+            "consignes": ["Vérifier l'ancrage du châssis", "Contrôler absence de micro-fissures"],
+            "norme":     "ISO 10816 — Vibrations mécaniques",
+        })
+
+    if c_pres >= 7.0:
+        risques.append({
+            "type":      "Hydraulique",
+            "niveau":    "ÉLEVÉ" if c_pres >= 8.5 else "MODÉRÉ",
+            "valeur":    f"{c_pres:.1f} bar",
+            "seuil":     "7.0 bar",
+            "cause":     "Surpression circuit / colmatage filtre",
+            "epi":       EPI_PAR_RISQUE["hydraulique"],
+            "consignes": ["Purger la pression résiduelle avant déconnexion", "Utiliser raccords anti-projection"],
+            "norme":     "EN 14460 — Résistance aux explosions",
+        })
+
+    if not risques:
+        risques.append({
+            "type":      "Standard",
+            "niveau":    "FAIBLE",
+            "valeur":    "Tous capteurs nominaux",
+            "seuil":     "N/A",
+            "cause":     "Maintenance préventive planifiée",
+            "epi":       EPI_PAR_RISQUE["standard"],
+            "consignes": ["Appliquer procédure LOTO standard"],
+            "norme":     "ISO 45001 — Systèmes de management SST",
+        })
+
+    return {
+        "date_evaluation":  date.today().isoformat(),
+        "equipement":       "Pompe P-17",
+        "nb_risques":       len(risques),
+        "risque_maximal":   max((r["niveau"] for r in risques), key=lambda x: ["FAIBLE","MODÉRÉ","ÉLEVÉ"].index(x)),
+        "risques_identifies": risques,
+        "loto_obligatoire": True,
+        "norme_reference":  "ISO 45001:2018 — Management de la santé et sécurité au travail",
+    }
+
+def get_conformite_pieces(equipement: str) -> dict:
+    """Vérifie si les pièces utilisées ont une traçabilité fournisseur conforme (réf. fabricant renseignée)."""
     res = _notion.databases.query(
         database_id=DB_STOCK,
         filter={"property": "Équipements compatibles", "rich_text": {"contains": equipement}}
     )
-    valeur_stock = 0
-    pieces = []
+    conformes, non_conformes = [], []
     for page in res["results"]:
         p = _p(page)
-        stock = float(_text(p.get("Stock actuel")) or 0)
-        prix  = float(_text(p.get("Prix unitaire (€)")) or 0)
-        valeur_stock += stock * prix
-        pieces.append({
+        ref   = _text(p.get("Réf. fabricant"))
+        fourn = _text(p.get("Fournisseur principal"))
+        entry = {
             "composant":    _text(p.get("Composant")),
-            "stock":        stock,
-            "prix_u":       prix,
-            "valeur_immo":  round(stock * prix, 2),
-            "statut":       _text(p.get("Statut stock")),
-            "critique":     _text(p.get("Critique")),
-            "delai_reappro":_text(p.get("Délai réappro (jours)")),
-        })
+            "ref_fab":      ref,
+            "fournisseur":  fourn,
+            "conforme":     bool(ref and fourn),
+        }
+        if entry["conforme"]:
+            conformes.append(entry)
+        else:
+            non_conformes.append(entry)
+
     return {
-        "valeur_stock_immobilisee_eur": round(valeur_stock, 2),
-        "nb_references":                len(pieces),
-        "pieces_en_rupture":            [p for p in pieces if p["statut"] == "Rupture"],
-        "pieces_alerte":                [p for p in pieces if "Alerte" in p["statut"]],
-        "detail_stock":                 pieces,
+        "taux_conformite_pct":   round(len(conformes) / max(len(conformes) + len(non_conformes), 1) * 100, 1),
+        "pieces_conformes":      conformes,
+        "pieces_non_conformes":  non_conformes,
+        "observation":           "Toutes pièces conformes" if not non_conformes
+                                 else f"{len(non_conformes)} pièce(s) sans traçabilité fournisseur complète",
+    }
+
+def generer_rapport_audit(equipement: str, technicien: str = "Lionel") -> dict:
+    """Génère les métadonnées du dossier de preuve ISO 45001 (horodatage, référence, statut)."""
+    today = date.today().isoformat()
+    ref   = f"RF_AUDIT_ISO45001_{equipement.replace(' ', '_').replace('-', '')}_{today}.pdf"
+    return {
+        "reference_dossier":    ref,
+        "date_generation":      today,
+        "technicien_concerne":  technicien,
+        "equipement":           equipement,
+        "norme":                "ISO 45001:2018",
+        "contenu_dossier": [
+            "Matrice des risques identifiés (générée automatiquement)",
+            "Liste EPI obligatoires validée",
+            "Procédure LOTO appliquée (étapes horodatées)",
+            "Habilitations technicien vérifiées",
+            "Traçabilité pièces détachées (réf. fournisseur)",
+            "Signature électronique agent ResilientFlow AI",
+        ],
+        "statut": "Généré — Prêt pour transmission organisme certificateur",
+        "validite_jours": 90,
     }
 
 
 # ── OUTILS DÉCLARÉS À L'AGENT ─────────────────────────────────────────────────
 TOOLS = [
     {
-        "name": "get_bilan_equipement",
-        "description": "Récupère le bilan de vie de l'équipement : âge, heures de fonctionnement, taux d'usure estimé. Permet d'évaluer si un remplacement CAPEX est justifié.",
-        "input_schema": {"type": "object", "properties": {"nom": {"type": "string"}}, "required": ["nom"]}
-    },
-    {
-        "name": "get_historique_couts_maintenance",
-        "description": "Calcule les coûts cumulés de maintenance (réalisés + planifiés). Clé pour le calcul du ROI et la comparaison CAPEX vs OPEX.",
+        "name": "get_exigences_hse_intervention",
+        "description": "Récupère les exigences HSE (habilitations, LOTO) de toutes les interventions planifiées. Permet de vérifier la conformité du planning avec la réglementation.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
-        "name": "get_exposition_financiere_production",
-        "description": "Estime l'exposition financière totale en cas de panne non planifiée : perte de production sur tous les OF actifs. Quantifie le risque résiduel.",
+        "name": "get_matrice_risques_capteurs",
+        "description": "Génère la matrice de risques en temps réel à partir des valeurs capteurs. Identifie les risques thermiques, mécaniques et hydrauliques avec les EPI réglementaires associés.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "c_temp": {"type": "number", "description": "Température en °C"},
+                "c_vib":  {"type": "number", "description": "Vibration en mm/s"},
+                "c_pres": {"type": "number", "description": "Pression en bar"},
+            },
+            "required": ["c_temp", "c_vib", "c_pres"]
+        }
+    },
+    {
+        "name": "get_conformite_pieces",
+        "description": "Vérifie la traçabilité réglementaire des pièces détachées utilisées (référence fabricant + fournisseur). Essentiel pour la conformité ISO 45001.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
-        "name": "get_etat_stock_strategique",
-        "description": "Analyse la valeur immobilisée en stock de pièces détachées et identifie les pièces critiques manquantes. Vision trésorerie et risque approvisionnement.",
-        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
+        "name": "generer_rapport_audit",
+        "description": "Génère les métadonnées du dossier de preuve ISO 45001 avec référence, horodatage et contenu certifié.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "equipement":  {"type": "string"},
+                "technicien":  {"type": "string", "description": "Nom du technicien intervenant"}
+            },
+            "required": ["equipement"]
+        }
     }
 ]
 
 def _execute(name, inputs):
-    if name == "get_bilan_equipement":                  return get_bilan_equipement(inputs["nom"])
-    if name == "get_historique_couts_maintenance":      return get_historique_couts_maintenance(inputs["equipement"])
-    if name == "get_exposition_financiere_production":  return get_exposition_financiere_production(inputs["equipement"])
-    if name == "get_etat_stock_strategique":            return get_etat_stock_strategique(inputs["equipement"])
+    if name == "get_exigences_hse_intervention":  return get_exigences_hse_intervention(inputs["equipement"])
+    if name == "get_matrice_risques_capteurs":     return get_matrice_risques_capteurs(inputs["c_temp"], inputs["c_vib"], inputs["c_pres"])
+    if name == "get_conformite_pieces":            return get_conformite_pieces(inputs["equipement"])
+    if name == "generer_rapport_audit":            return generer_rapport_audit(inputs["equipement"], inputs.get("technicien", "Lionel"))
     return {"erreur": f"Outil inconnu : {name}"}
 
 
 # ── PROMPT SYSTÈME ────────────────────────────────────────────────────────────
-SYSTEM = """Tu es l'assistant stratégique d'Antoine, Directeur Technique.
-Tu analyses les données de fiabilité industrielle pour l'aider à prendre
-des décisions d'investissement et de politique de maintenance.
+SYSTEM = """Tu es l'assistant HSE de Leila, Responsable Santé-Sécurité-Environnement.
+Tu analyses les situations d'intervention pour garantir la conformité ISO 45001.
 
-Ton rôle : transformer les données terrain en indicateurs de pilotage,
-comparer les scénarios CAPEX vs OPEX et quantifier le ROI de la maintenance prescriptive.
+Ton rôle : identifier les risques réglementaires, prescrire les EPI obligatoires,
+vérifier la conformité des procédures et générer les preuves d'audit.
 
 Format de réponse attendu :
-1. **Synthèse exécutive** : 3 lignes max, chiffres clés
-2. **Analyse OPEX** : coûts de maintenance cumulés et trajectoire
-3. **Analyse CAPEX** : justification ou non du remplacement avec point mort financier
-4. **Exposition au risque** : perte financière estimée en cas de panne non maîtrisée
-5. **Recommandation CODIR** : décision à présenter avec justification chiffrée
+1. **Niveau de risque global** : FAIBLE / MODÉRÉ / ÉLEVÉ avec justification
+2. **Matrice des risques identifiés** : tableau risque / niveau / EPI requis / norme
+3. **Procédure LOTO** : étapes obligatoires si applicable
+4. **Points de non-conformité** : ce qui manque ou doit être corrigé
+5. **Dossier de preuve** : référence du rapport généré et contenu
 
-Sois synthétique et chiffré. Antoine parle au CODIR, pas à un technicien.
+Sois précis sur les normes (EN, ISO, NF). Leila répond devant un auditeur externe.
 """
 
 
-# ── FONCTION PRINCIPALE (appelée depuis pages/3_Antoine.py) ──────────────────
-def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> str:
+# ── FONCTION PRINCIPALE (appelée depuis pages/4_Leila.py) ────────────────────
+def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> str:
     """
-    Lance l'agent Antoine pour une analyse stratégique d'un équipement.
-    Retourne l'analyse ROI/CAPEX en texte Markdown.
+    Lance l'agent Leila avec les valeurs capteurs courantes.
+    Retourne l'évaluation HSE complète en texte Markdown.
     """
-    rul_info = f"\n- RUL actuel estimé : {c_rul}h" if c_rul else ""
     situation = (
-        f"ANALYSE STRATÉGIQUE — {equipement}{rul_info}\n\n"
-        f"Réalise une analyse complète CAPEX vs OPEX pour cet équipement : "
-        f"coûts de maintenance cumulés, exposition financière production, "
-        f"état du stock. Formule une recommandation pour le CODIR."
+        f"ÉVALUATION HSE — Pompe P-17, Unité B\n"
+        f"- Température : {c_temp:.1f}°C\n"
+        f"- Vibration   : {c_vib:.2f} mm/s\n"
+        f"- Pression    : {c_pres:.1f} bar\n"
+        f"- RUL estimé  : {c_rul}h\n\n"
+        f"Réalise l'évaluation HSE complète : matrice de risques, EPI requis, "
+        f"conformité LOTO, traçabilité pièces et génère le dossier d'audit ISO 45001."
     )
 
     messages = [{"role": "user", "content": situation}]
@@ -246,4 +318,4 @@ def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> str:
 
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(run_agent_antoine(equipement="Pompe P-17", c_rul=18))
+    print(run_agent_leila(c_temp=117.0, c_vib=5.8, c_pres=4.6, c_rul=12))
