@@ -7,6 +7,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from shared_state import (
     init_session_state, update_sensors, get_github_file, COMMON_CSS
 )
+from agents.agent_lionel import run_agent_lionel
 
 # ── CONFIG PAGE ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Lionel — Terminal Terrain", page_icon="🔧", layout="wide")
@@ -64,40 +65,34 @@ lbl4.markdown(
     unsafe_allow_html=True
 )
 
-# ── ALERTES & FICHES GITHUB ───────────────────────────────────────────────────
+# ── ALERTES & AGENT LIONEL ────────────────────────────────────────────────────
 if c_rul <= 24:
-    from agents.agent_lionel import run_agent_lionel with st.spinner("🤖 Agent analyse..."):
-        st.markdown(run_agent_lionel(c_temp, c_vib, c_pres, c_rul))
-    st.error("🚨 **ALERTE RESILIENTFLOW AI : INTERVENTION GUIDÉE DIRECTE (LIVE GITHUB)**")
-    machine_info = get_github_file("data/POMPE_P17/info.json", is_json=True)
-    if machine_info:
-        st.caption(
-            "🤖 *Matériel identifié : " + machine_info.get("modele", "?") +
-            " | Zone : " + machine_info.get("emplacement", "?") + "*"
+    st.error("🚨 **ALERTE RESILIENTFLOW AI — RUL CRITIQUE : " + str(c_rul) + "h**")
+
+    # Bouton pour déclencher l'agent manuellement (évite un appel API à chaque rerun)
+    if st.button("🤖 Obtenir les instructions d'intervention", type="primary", use_container_width=True):
+        st.session_state.running = False          # pause auto-refresh pendant l'appel
+        st.session_state["lionel_prescription"] = None  # reset
+
+    if "lionel_prescription" not in st.session_state:
+        st.session_state["lionel_prescription"] = None
+
+    if st.session_state.get("lionel_prescription") is None and not st.session_state.running:
+        with st.spinner("🤖 Agent analyse la situation et consulte Notion..."):
+            st.session_state["lionel_prescription"] = run_agent_lionel(
+                c_temp=c_temp, c_vib=c_vib, c_pres=c_pres, c_rul=c_rul
+            )
+
+    if st.session_state.get("lionel_prescription"):
+        st.markdown(
+            "<div class='doc-box'>" + st.session_state["lionel_prescription"] + "</div>",
+            unsafe_allow_html=True
         )
-
-    
-
-    has_doc = False
-    if c_temp >= 110:
-        content = get_github_file("data/POMPE_P17/surchauffe.md")
-        if content:
-            st.markdown("<div class='doc-box'>" + content + "</div>", unsafe_allow_html=True)
-            has_doc = True
-    if c_vib >= 4.5:
-        content = get_github_file("data/POMPE_P17/vibration.md")
-        if content:
-            st.markdown("<div class='doc-box'>" + content + "</div>", unsafe_allow_html=True)
-            has_doc = True
-    if c_pres >= 7.0:
-        content = get_github_file("data/POMPE_P17/pression.md")
-        if content:
-            st.markdown("<div class='doc-box'>" + content + "</div>", unsafe_allow_html=True)
-            has_doc = True
-    if not has_doc:
-        st.warning("ℹ️ Extraction automatique des fiches manuels techniques en cours "
-                   "(ou dépôt distant non configuré).")
+        if st.button("▶️ Reprendre la surveillance", use_container_width=True):
+            st.session_state["lionel_prescription"] = None
+            st.session_state.running = True
 else:
+    st.session_state["lionel_prescription"] = None   # reset si retour nominal
     st.success("🤖 **Agent AI** : Surveillance en cours. Aucune ligne de procédure d'urgence requise.")
 
 st.markdown("---")
