@@ -12,9 +12,17 @@ import os, json
 import anthropic
 from notion_client import Client
 
+def _get_secret(key):
+    try:
+        import streamlit as st
+        return st.secrets[key]
+    except Exception:
+        return os.environ.get(key, "")
+
+
 # ── CLIENTS ───────────────────────────────────────────────────────────────────
-_notion   = Client(auth=os.environ["NOTION_TOKEN"])
-_claude   = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+_notion   = Client(auth=_get_secret("NOTION_TOKEN"))
+_claude   = anthropic.Anthropic(api_key=_get_secret("ANTHROPIC_API_KEY"))
 
 DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
 DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
