@@ -74,6 +74,10 @@ if c_rul <= 24:
             " | Zone : " + machine_info.get("emplacement", "?") + "*"
         )
 
+    from agents.agent_lionel import run_agent_lionel
+    with st.spinner("🤖 Agent analyse..."):
+        st.markdown(run_agent_lionel(c_temp, c_vib, c_pres, c_rul))
+
     has_doc = False
     if c_temp >= 110:
         content = get_github_file("data/POMPE_P17/surchauffe.md")
