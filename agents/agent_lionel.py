@@ -9,8 +9,10 @@ Intégration dans pages/1_Lionel.py :
 """
 
 import os, json
-import anthropic
 from notion_client import Client
+import sys, os as _os
+sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
+from llm_client import chat as _llm_chat
 
 def _get_secret(key):
     try:
@@ -22,7 +24,6 @@ def _get_secret(key):
 
 # ── CLIENTS ───────────────────────────────────────────────────────────────────
 _notion   = Client(auth=_get_secret("NOTION_TOKEN"))
-_claude   = anthropic.Anthropic(api_key=_get_secret("ANTHROPIC_API_KEY"))
 
 DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
 DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
@@ -182,19 +183,15 @@ def run_agent_lionel(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> 
 
     messages = [{"role": "user", "content": situation}]
     while True:
-        resp = _claude.messages.create(
-            model="claude-opus-4-5", max_tokens=1500,
-            system=SYSTEM, tools=TOOLS, messages=messages
-        )
+        resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=1500)
         if resp.stop_reason == "end_turn":
-            return "".join(b.text for b in resp.content if hasattr(b, "text"))
+            return resp.final_text()
         if resp.stop_reason == "tool_use":
             results = []
-            for b in resp.content:
-                if b.type == "tool_use":
-                    out = _execute(b.name, b.input)
-                    results.append({"type": "tool_result", "tool_use_id": b.id,
-                                    "content": json.dumps(out, ensure_ascii=False)})
+            for tc in resp.tool_calls():
+                out = _execute(tc["name"], tc["input"])
+                results.append({"type": "tool_result", "tool_use_id": tc.get("id", "tc0"),
+                                "content": json.dumps(out, ensure_ascii=False)})
             messages.append({"role": "assistant", "content": resp.content})
             messages.append({"role": "user",      "content": results})
 
