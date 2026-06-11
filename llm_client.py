@@ -30,8 +30,8 @@ def _provider() -> str:
 
 
 # Modèles par défaut
-DEFAULT_MODEL_1MINAI    = "claude-opus-4-5"
-DEFAULT_MODEL_ANTHROPIC = "claude-opus-4-5"
+DEFAULT_MODEL_1MINAI    = "claude-opus-4-7"
+DEFAULT_MODEL_ANTHROPIC = "claude-opus-4-7"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
