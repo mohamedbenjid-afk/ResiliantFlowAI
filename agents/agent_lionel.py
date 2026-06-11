@@ -1,18 +1,10 @@
-"""
-agents/agent_lionel.py — Agent prescriptif de Lionel (Technicien Terrain)
-Rôle : diagnostiquer une anomalie capteur, identifier la procédure d'intervention,
-       vérifier les pièces disponibles et guider Lionel étape par étape sur le terrain.
-
-Intégration dans pages/1_Lionel.py :
-    from agents.agent_lionel import run_agent_lionel
-    prescription = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
-"""
-
 import os, json
-from notion_client import Client
-import sys, os as _os
-sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
+import requests as _requests
+
+import sys as _sys, os as _os
+_sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
 from llm_client import chat as _llm_chat
+
 
 def _get_secret(key):
     try:
@@ -22,8 +14,24 @@ def _get_secret(key):
         return os.environ.get(key, "")
 
 
-# ── CLIENTS ───────────────────────────────────────────────────────────────────
-_notion   = Client(auth=_get_secret("NOTION_TOKEN"))
+# ── CLIENT NOTION via requests (compatible toutes versions) ──────────────────
+def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None) -> list:
+    """Requête Notion Database API directement via requests."""
+    token = _get_secret("NOTION_TOKEN")
+    url   = f"https://api.notion.com/v1/databases/{database_id}/query"
+    headers = {
+        "Authorization":  f"Bearer {token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type":   "application/json",
+    }
+    payload = {}
+    if filter_obj: payload["filter"] = filter_obj
+    if sorts:      payload["sorts"]  = sorts
+
+    resp = _requests.post(url, headers=headers, json=payload, timeout=15)
+    if not resp.ok:
+        return []
+    return resp.json().get("results", [])
 
 DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
 DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
@@ -49,10 +57,7 @@ def _p(page): return page.get("properties", {})
 
 def get_fiche_equipement(nom: str) -> dict:
     """Seuils, signe d'usure connus, technicien référent."""
-    res = _notion.databases.query(
-        database_id=DB_EQUIPEMENTS,
-        filter={"property": "Équipement", "title": {"contains": nom}}
-    )
+    res = _notion_query(DB_EQUIPEMENTS, filter_obj={"property": "Équipement", "title": {"contains": nom}}, sorts=None)
     if not res["results"]: return {"erreur": f"'{nom}' non trouvé"}
     p = _p(res["results"][0])
     return {
@@ -70,14 +75,11 @@ def get_fiche_equipement(nom: str) -> dict:
 
 def get_procedure_intervention(equipement: str, type_anomalie: str) -> dict:
     """Procédure d'intervention planifiée la plus proche pour ce type d'anomalie."""
-    res = _notion.databases.query(
-        database_id=DB_MAINTENANCE,
-        filter={"and": [
+    res = _notion_query(DB_MAINTENANCE, filter_obj={"and": [
             {"property": "Équipement",  "rich_text": {"contains": equipement}},
             {"property": "Statut",      "select":    {"equals": "Planifiée"}}
         ]},
-        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
-    )
+        sorts=[{"property": "Date planifiée", "direction": "ascending"}], sorts=[{"property": "Date planifiée", "direction": "ascending"}])
     if not res["results"]: return {"info": "Aucune procédure planifiée trouvée"}
     # Cherche d'abord une intervention liée au type d'anomalie, sinon prend la plus proche
     for page in res["results"]:
@@ -104,10 +106,7 @@ def _format_maintenance(p: dict) -> dict:
 
 def get_disponibilite_piece(nom_piece: str) -> dict:
     """Stock et emplacement magasin d'une pièce — ce que Lionel doit aller chercher."""
-    res = _notion.databases.query(
-        database_id=DB_STOCK,
-        filter={"property": "Composant", "title": {"contains": nom_piece}}
-    )
+    res = _notion_query(DB_STOCK, filter_obj={"property": "Composant", "title": {"contains": nom_piece}}, sorts=None)
     if not res["results"]: return {"erreur": f"'{nom_piece}' non trouvé en magasin"}
     p = _p(res["results"][0])
     stock = _text(p.get("Stock actuel"))
