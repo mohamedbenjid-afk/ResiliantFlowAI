@@ -58,8 +58,8 @@ def _p(page): return page.get("properties", {})
 def get_fiche_equipement(nom: str) -> dict:
     """Seuils, signe d'usure connus, technicien référent."""
     res = _notion_query(DB_EQUIPEMENTS, filter_obj={"property": "Équipement", "title": {"contains": nom}}, sorts=None)
-    if not res["results"]: return {"erreur": f"'{nom}' non trouvé"}
-    p = _p(res["results"][0])
+    if not res: return {"erreur": f"'{nom}' non trouvé"}
+    p = _p(res[0])
     return {
         "equipement":     _text(p.get("Équipement")),
         "statut":         _text(p.get("Statut")),
@@ -79,15 +79,15 @@ def get_procedure_intervention(equipement: str, type_anomalie: str) -> dict:
             {"property": "Équipement",  "rich_text": {"contains": equipement}},
             {"property": "Statut",      "select":    {"equals": "Planifiée"}}
         ]},
-        sorts=[{"property": "Date planifiée", "direction": "ascending"}], sorts=[{"property": "Date planifiée", "direction": "ascending"}])
-    if not res["results"]: return {"info": "Aucune procédure planifiée trouvée"}
+        sorts=[{"property": "Date planifiée", "direction": "ascending"}])
+    if not res: return {"info": "Aucune procédure planifiée trouvée"}
     # Cherche d'abord une intervention liée au type d'anomalie, sinon prend la plus proche
-    for page in res["results"]:
+    for page in res:
         p = _p(page)
         titre = _text(p.get("Intervention")).lower()
         if any(kw in titre for kw in [type_anomalie.lower(), "joint", "roulement", "vibr", "surchauf"]):
             return _format_maintenance(p)
-    return _format_maintenance(_p(res["results"][0]))  # fallback: la plus proche
+    return _format_maintenance(_p(res[0]))  # fallback: la plus proche
 
 def _format_maintenance(p: dict) -> dict:
     return {
@@ -107,8 +107,8 @@ def _format_maintenance(p: dict) -> dict:
 def get_disponibilite_piece(nom_piece: str) -> dict:
     """Stock et emplacement magasin d'une pièce — ce que Lionel doit aller chercher."""
     res = _notion_query(DB_STOCK, filter_obj={"property": "Composant", "title": {"contains": nom_piece}}, sorts=None)
-    if not res["results"]: return {"erreur": f"'{nom_piece}' non trouvé en magasin"}
-    p = _p(res["results"][0])
+    if not res: return {"erreur": f"'{nom_piece}' non trouvé en magasin"}
+    p = _p(res[0])
     stock = _text(p.get("Stock actuel"))
     seuil = _text(p.get("Stock minimum (seuil alerte)"))
     return {
