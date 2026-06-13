@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import sys, os
+from datetime import datetime
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from shared_state import init_session_state, update_sensors, COMMON_CSS
@@ -74,8 +75,82 @@ st.write(
 )
 
 if st.button("📥 Générer le dossier de conformité pour l'organisme de certification", use_container_width=True):
-    st.success("Dossier de preuve réglementaire exporté avec succès sous la référence `RF_AUDIT_ISO45001_P17.pdf`.")
-    st.caption("Statut : Horodatage certifié | Signature électronique de l'agent AI validée.")
+    with st.spinner("Génération du dossier ISO 45001 en cours…"):
+        try:
+            # ── Imports ──────────────────────────────────────────────────────
+            import notion_client as nc
+            from utils.pdf_audit import generate_audit_pdf
+
+            # ── Récupération des données Notion ──────────────────────────────
+            # Machine P-17 : recherche par nom dans la liste
+            machines = nc.get_machines()
+            machine = next(
+                (m for m in machines if "P-17" in m.get("nom", "") or "P17" in m.get("nom", "")),
+                machines[0] if machines else {}
+            )
+            machine_id = machine.get("id") or machine.get("notion_id", "")
+
+            equipe    = nc.get_equipe()
+            pieces    = nc.get_pieces(machine_id=machine_id) if machine_id else nc.get_pieces()
+            docs_hse  = nc.get_docs_hse(machine_id=machine_id) if machine_id else nc.get_docs_hse()
+
+            # Technicien de service (premier disponible ou générique)
+            technicien_data = next(
+                (m for m in equipe if m.get("disponibilite") == "Disponible"),
+                equipe[0] if equipe else {}
+            )
+            technicien_nom = technicien_data.get("nom", "Technicien de service")
+
+            # Anomalie déduite des capteurs
+            if c_temp >= 110:
+                type_anomalie = "Surchauffe stator — température critique"
+            elif c_vib >= 4.5:
+                type_anomalie = "Défaut palier — vibrations anormales"
+            elif c_pres >= 7.0:
+                type_anomalie = "Surpression circuit hydraulique"
+            else:
+                type_anomalie = "Dégradation générale — RUL critique"
+
+            # ── Construction du contexte PDF ─────────────────────────────────
+            context = {
+                "equipement"   : "Pompe P-17",
+                "technicien"   : technicien_nom,
+                "temp"         : float(c_temp),
+                "vib"          : float(c_vib),
+                "pres"         : float(c_pres),
+                "rul"          : int(c_rul),
+                "machine"      : machine,
+                "equipe"       : equipe,
+                "pieces"       : pieces,
+                "docs_hse"     : docs_hse,
+                "type_anomalie": type_anomalie,
+            }
+
+            # ── Génération PDF ───────────────────────────────────────────────
+            pdf_bytes = generate_audit_pdf(context)
+
+            # ── Référence du dossier (miroir de pdf_audit.py) ────────────────
+            from datetime import date
+            today_str = date.today().strftime("%Y%m%d")
+            now_str   = datetime.now().strftime("%H%M")
+            ref = f"RF_AUDIT_ISO45001_PompeP17_{today_str}_{now_str}"
+
+            st.success(f"✅ Dossier de preuve généré — référence `{ref}`")
+            st.caption("Statut : Horodatage certifié | Signature électronique SHA-256 de l'agent AI intégrée.")
+
+            st.download_button(
+                label="⬇️ Télécharger le dossier PDF",
+                data=pdf_bytes,
+                file_name=f"{ref}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+        except ImportError as e:
+            st.error(f"❌ Dépendance manquante : {e}\n\nInstaller avec : `pip install reportlab`")
+        except Exception as e:
+            st.error(f"❌ Erreur lors de la génération : {e}")
+            st.exception(e)
 
 # ── AUTO-REFRESH ──────────────────────────────────────────────────────────────
 if st.session_state.running:
