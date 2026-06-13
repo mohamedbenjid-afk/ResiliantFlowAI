@@ -9,10 +9,12 @@ Intégration dans pages/2_Sophie.py :
 """
 
 import os, json
-from notion_client import Client
+import requests as _requests
+
 import sys, os as _os
 sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
 from llm_client import chat as _llm_chat
+
 
 def _get_secret(key):
     try:
@@ -21,12 +23,39 @@ def _get_secret(key):
     except Exception:
         return os.environ.get(key, "")
 
-_notion = Client(auth=_get_secret("NOTION_TOKEN"))
 
-DB_OF          = "6777a9e0-4c76-49ca-a3d4-fb20a579cb2d"
-DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
-DB_STOCK       = "7229437a-027a-440f-a7be-5e37157f3b8d"
-DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
+# ── CLIENT NOTION via requests ────────────────────────────────────────────────
+def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None) -> list:
+    token = _get_secret("NOTION_TOKEN")
+    url   = f"https://api.notion.com/v1/databases/{database_id}/query"
+    headers = {
+        "Authorization":  f"Bearer {token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type":   "application/json",
+    }
+    payload = {}
+    if filter_obj: payload["filter"] = filter_obj
+    if sorts:      payload["sorts"]  = sorts
+
+    results, has_more, cursor = [], True, None
+    while has_more:
+        if cursor:
+            payload["start_cursor"] = cursor
+        resp = _requests.post(url, headers=headers, json=payload, timeout=15)
+        if not resp.ok:
+            return []
+        data = resp.json()
+        results.extend(data.get("results", []))
+        has_more = data.get("has_more", False)
+        cursor   = data.get("next_cursor")
+    return results
+
+
+# ── IDs des bases Notion ResilientFlow ───────────────────────────────────────
+DB_ORDRES_FAB = "d7ee45dab07943c1bda09a6b47089202"   # Ordres de fabrication
+DB_HISTORIQUE = "6f53558bfbee455891efa53b6536d892"   # Historique & plan de maintenance
+DB_PIECES     = "c22138baa8ca4806b19403108735bc68"   # Pièces détachées
+DB_EQUIPE     = "0a82b4f53a26491c81e64b0cb8bb058c"   # Équipe maintenance
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -37,114 +66,117 @@ def _text(prop):
     if t == "rich_text":    return "".join(r["plain_text"] for r in prop.get("rich_text", []))
     if t == "select":       s = prop.get("select"); return s["name"] if s else ""
     if t == "multi_select": return ", ".join(o["name"] for o in prop.get("multi_select", []))
-    if t == "number":       return prop.get("number")
+    if t == "number":       v = prop.get("number"); return v if v is not None else ""
     if t == "date":         d = prop.get("date"); return d["start"] if d else ""
     return ""
 
 def _p(page): return page.get("properties", {})
 
 
-# ── OUTILS PLANIFICATION (ce dont Sophie a besoin pour arbitrer) ──────────────
+# ── OUTILS PLANIFICATION ──────────────────────────────────────────────────────
 
 def get_impact_production(equipement: str) -> dict:
-    """OF en cours + OF planifiés sur cet équipement avec coût d'arrêt et ligne de secours."""
-    res = _notion.databases.query(
-        database_id=DB_OF,
-        filter={"property": "Équipement concerné", "rich_text": {"contains": equipement}},
-        sorts=[{"property": "Statut", "direction": "ascending"}]
+    """OF en cours et planifiés sur cet équipement avec coût d'arrêt."""
+    res = _notion_query(
+        DB_ORDRES_FAB,
+        filter_obj={"property": "Machine impactée", "rich_text": {"contains": equipement}},
+        sorts=[{"property": "Priorité", "direction": "ascending"}]
     )
     of_en_cours, of_planifies = [], []
-    for page in res["results"]:
+    for page in res:
         p = _p(page)
+        statut = _text(p.get("Statut OF"))
         entry = {
-            "of":              _text(p.get("Ordre de Fabrication")),
-            "statut":          _text(p.get("Statut")),
-            "produit":         _text(p.get("Produit fabriqué")),
-            "qte_cible":       _text(p.get("Quantité cible")),
+            "reference":       _text(p.get("Référence OF")),
+            "statut":          statut,
+            "produit":         _text(p.get("Produit")),
+            "ligne":           _text(p.get("Ligne de production")),
+            "qte_prevue":      _text(p.get("Quantité prévue")),
             "qte_realisee":    _text(p.get("Quantité réalisée")),
-            "cout_arret_h":    _text(p.get("Coût arrêt horaire (€)")),
-            "ligne_secours":   _text(p.get("Ligne de secours disponible")),
+            "cout_arret_eur":  _text(p.get("Coût arrêt (€)")),
+            "duree_arret_h":   _text(p.get("Durée arrêt (h)")),
             "date_fin_prevue": _text(p.get("Date fin prévue")),
-            "responsable":     _text(p.get("Responsable OF")),
+            "responsable":     _text(p.get("Responsable production")),
+            "impact_rul":      _text(p.get("Impact RUL")),
         }
-        if _text(p.get("Statut")) == "En cours":
+        if statut == "En cours":
             of_en_cours.append(entry)
         else:
             of_planifies.append(entry)
+
     return {
-        "of_en_cours":  of_en_cours  or [{"info": "Aucun OF en cours"}],
+        "of_en_cours":  of_en_cours  or [{"info": "Aucun OF en cours sur cet équipement"}],
         "of_planifies": of_planifies or [{"info": "Aucun OF planifié"}],
-        "total_of":     len(res["results"]),
+        "total_of":     len(res),
+        "cout_arret_total_eur": sum(float(o.get("cout_arret_eur") or 0) for o in of_en_cours),
     }
 
+
 def get_charge_techniciens(equipement: str) -> list:
-    """Liste des techniciens assignés aux interventions planifiées — pour détecter les surcharges."""
-    res = _notion.databases.query(
-        database_id=DB_MAINTENANCE,
-        filter={"and": [
-            {"property": "Équipement", "rich_text": {"contains": equipement}},
-            {"property": "Statut",     "select":    {"not_equals": "Réalisée"}}
-        ]}
-    )
-    techniciens = {}
-    for page in res["results"]:
+    """Disponibilité et charge de travail de l'équipe maintenance."""
+    res = _notion_query(DB_EQUIPE)
+    equipe = []
+    for page in res:
         p = _p(page)
-        tech   = _text(p.get("Technicien assigné")) or "Non assigné"
-        duree  = float(_text(p.get("Durée estimée (h)")) or 0)
-        statut = _text(p.get("Statut"))
-        if tech not in techniciens:
-            techniciens[tech] = {"technicien": tech, "interventions": [], "charge_totale_h": 0}
-        techniciens[tech]["interventions"].append({
-            "intervention": _text(p.get("Intervention")),
-            "priorite":     _text(p.get("Priorité")),
-            "date":         _text(p.get("Date planifiée")),
-            "duree_h":      duree,
-            "statut":       statut,
+        equipe.append({
+            "technicien":       _text(p.get("Nom Technicien")),
+            "prenom":           _text(p.get("Prénom")),
+            "role":             _text(p.get("Rôle")),
+            "specialite":       _text(p.get("Spécialité")),
+            "habilitations":    _text(p.get("Habilitations")),
+            "disponibilite":    _text(p.get("Disponibilité")),
+            "charge_h_sem":     _text(p.get("Charge horaire (h/sem)")),
+            "heures_restantes": _text(p.get("Heures restantes")),
+            "zone":             _text(p.get("Zone assignée")),
         })
-        techniciens[tech]["charge_totale_h"] += duree
-    return list(techniciens.values()) or [{"info": "Aucune intervention planifiée"}]
+    return equipe or [{"info": "Aucun technicien trouvé"}]
+
 
 def get_fenetre_maintenance(equipement: str) -> list:
-    """Toutes les interventions planifiées avec leurs dates — pour trouver un créneau d'arrêt optimal."""
-    res = _notion.databases.query(
-        database_id=DB_MAINTENANCE,
-        filter={"and": [
-            {"property": "Équipement", "rich_text": {"contains": equipement}},
-            {"property": "Statut",     "select":    {"equals": "Planifiée"}}
+    """Interventions planifiées sur cet équipement — pour trouver un créneau optimal."""
+    res = _notion_query(
+        DB_HISTORIQUE,
+        filter_obj={"and": [
+            {"property": "Machine", "rich_text": {"contains": equipement}},
+            {"property": "Statut",  "select":    {"equals": "Planifiée"}},
         ]},
-        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
+        sorts=[{"property": "Date intervention", "direction": "ascending"}]
     )
     return [
         {
-            "intervention":   _text(_p(p).get("Intervention")),
-            "priorite":       _text(_p(p).get("Priorité")),
-            "date_planifiee": _text(_p(p).get("Date planifiée")),
-            "duree_h":        _text(_p(p).get("Durée estimée (h)")),
+            "titre":          _text(_p(p).get("Titre intervention")),
+            "type":           _text(_p(p).get("Type")),
+            "date":           _text(_p(p).get("Date intervention")),
+            "prochaine_echeance": _text(_p(p).get("Prochaine échéance")),
+            "duree_estimee_h":_text(_p(p).get("Durée estimée (h)")),
             "technicien":     _text(_p(p).get("Technicien assigné")),
-            "cout_estime":    _text(_p(p).get("Coût estimé (€)")),
+            "cout_eur":       _text(_p(p).get("Coût intervention (€)")),
         }
-        for p in res["results"]
-    ] or [{"info": "Aucune fenêtre planifiée"}]
+        for p in res
+    ] or [{"info": "Aucune intervention planifiée — fenêtre à créer"}]
+
 
 def get_pieces_critiques_manquantes(equipement: str) -> list:
-    """Pièces en rupture ou stock bas qui bloqueraient une intervention immédiate."""
-    res = _notion.databases.query(
-        database_id=DB_STOCK,
-        filter={"and": [
-            {"property": "Équipements compatibles", "rich_text": {"contains": equipement}},
-            {"property": "Statut stock", "select": {"does_not_equal": "OK"}}
+    """Pièces en rupture ou stock bas pouvant bloquer une intervention immédiate."""
+    res = _notion_query(
+        DB_PIECES,
+        filter_obj={"and": [
+            {"property": "Machine concernée", "rich_text": {"contains": equipement}},
+            {"property": "Statut stock",      "select":    {"does_not_equal": "En stock"}},
         ]}
     )
     return [
         {
-            "composant":     _text(_p(p).get("Composant")),
-            "statut_stock":  _text(_p(p).get("Statut stock")),
-            "stock_actuel":  _text(_p(p).get("Stock actuel")),
-            "delai_reappro": _text(_p(p).get("Délai réappro (jours)")),
-            "critique":      _text(_p(p).get("Critique")),
-            "notes":         _text(_p(p).get("Notes")),
+            "designation":     _text(_p(p).get("Désignation pièce")),
+            "reference":       _text(_p(p).get("Référence")),
+            "statut_stock":    _text(_p(p).get("Statut stock")),
+            "stock_actuel":    _text(_p(p).get("Stock actuel")),
+            "stock_minimum":   _text(_p(p).get("Stock minimum")),
+            "delai_livraison": _text(_p(p).get("Délai livraison (j)")),
+            "fournisseur":     _text(_p(p).get("Fournisseur")),
+            "notes":           _text(_p(p).get("Notes")),
         }
-        for p in res["results"]
+        for p in res
     ] or [{"info": "Aucune pièce critique manquante — stock OK pour intervention"}]
 
 
@@ -152,31 +184,32 @@ def get_pieces_critiques_manquantes(equipement: str) -> list:
 TOOLS = [
     {
         "name": "get_impact_production",
-        "description": "Récupère les OF en cours et planifiés sur cet équipement : coût d'arrêt horaire, ligne de secours disponible, dates de fin prévues. Permet d'évaluer le risque financier d'un arrêt.",
+        "description": "Récupère les OF en cours et planifiés sur cet équipement : coût d'arrêt, avancement, dates de fin. Permet d'évaluer le risque financier d'un arrêt.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
         "name": "get_charge_techniciens",
-        "description": "Analyse la charge de travail de chaque technicien sur les interventions planifiées. Permet de détecter les surcharges et d'optimiser l'assignation.",
+        "description": "Analyse la disponibilité et la charge de travail de l'équipe maintenance. Permet de trouver le technicien disponible avec les bonnes habilitations.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
         "name": "get_fenetre_maintenance",
-        "description": "Liste toutes les interventions planifiées avec leurs dates et durées. Permet de trouver un créneau d'arrêt optimal qui minimise l'impact sur la production.",
+        "description": "Liste les interventions planifiées avec leurs dates et durées. Permet de trouver un créneau d'arrêt optimal qui minimise l'impact production.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
         "name": "get_pieces_critiques_manquantes",
-        "description": "Identifie les pièces en rupture de stock ou en commande qui pourraient bloquer une intervention immédiate. Essentiel pour l'arbitrage du timing.",
+        "description": "Identifie les pièces en rupture ou stock bas qui pourraient bloquer une intervention immédiate. Essentiel pour l'arbitrage du timing.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     }
 ]
 
+
 def _execute(name, inputs):
-    if name == "get_impact_production":          return get_impact_production(inputs["equipement"])
-    if name == "get_charge_techniciens":         return get_charge_techniciens(inputs["equipement"])
-    if name == "get_fenetre_maintenance":        return get_fenetre_maintenance(inputs["equipement"])
-    if name == "get_pieces_critiques_manquantes":return get_pieces_critiques_manquantes(inputs["equipement"])
+    if name == "get_impact_production":           return get_impact_production(inputs["equipement"])
+    if name == "get_charge_techniciens":          return get_charge_techniciens(inputs["equipement"])
+    if name == "get_fenetre_maintenance":         return get_fenetre_maintenance(inputs["equipement"])
+    if name == "get_pieces_critiques_manquantes": return get_pieces_critiques_manquantes(inputs["equipement"])
     return {"erreur": f"Outil inconnu : {name}"}
 
 
@@ -201,7 +234,7 @@ Sois factuel. Chiffre les risques financiers quand tu le peux.
 """
 
 
-# ── FONCTION PRINCIPALE (appelée depuis pages/2_Sophie.py) ───────────────────
+# ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
 def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
                      c_temp: float = None, c_vib: float = None) -> str:
     """

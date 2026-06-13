@@ -9,10 +9,12 @@ Intégration dans pages/3_Antoine.py :
 """
 
 import os, json
-from notion_client import Client
+import requests as _requests
+
 import sys, os as _os
 sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
 from llm_client import chat as _llm_chat
+
 
 def _get_secret(key):
     try:
@@ -21,12 +23,39 @@ def _get_secret(key):
     except Exception:
         return os.environ.get(key, "")
 
-_notion = Client(auth=_get_secret("NOTION_TOKEN"))
 
-DB_OF          = "6777a9e0-4c76-49ca-a3d4-fb20a579cb2d"
-DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
-DB_STOCK       = "7229437a-027a-440f-a7be-5e37157f3b8d"
-DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
+# ── CLIENT NOTION via requests ────────────────────────────────────────────────
+def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None) -> list:
+    token = _get_secret("NOTION_TOKEN")
+    url   = f"https://api.notion.com/v1/databases/{database_id}/query"
+    headers = {
+        "Authorization":  f"Bearer {token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type":   "application/json",
+    }
+    payload = {}
+    if filter_obj: payload["filter"] = filter_obj
+    if sorts:      payload["sorts"]  = sorts
+
+    results, has_more, cursor = [], True, None
+    while has_more:
+        if cursor:
+            payload["start_cursor"] = cursor
+        resp = _requests.post(url, headers=headers, json=payload, timeout=15)
+        if not resp.ok:
+            return []
+        data = resp.json()
+        results.extend(data.get("results", []))
+        has_more = data.get("has_more", False)
+        cursor   = data.get("next_cursor")
+    return results
+
+
+# ── IDs des bases Notion ResilientFlow ───────────────────────────────────────
+DB_MACHINES   = "5279cb2a42b54b42936e22313521f825"   # Machines & équipements
+DB_ORDRES_FAB = "d7ee45dab07943c1bda09a6b47089202"   # Ordres de fabrication
+DB_HISTORIQUE = "6f53558bfbee455891efa53b6536d892"   # Historique & plan de maintenance
+DB_PIECES     = "c22138baa8ca4806b19403108735bc68"   # Pièces détachées
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -37,134 +66,172 @@ def _text(prop):
     if t == "rich_text":    return "".join(r["plain_text"] for r in prop.get("rich_text", []))
     if t == "select":       s = prop.get("select"); return s["name"] if s else ""
     if t == "multi_select": return ", ".join(o["name"] for o in prop.get("multi_select", []))
-    if t == "number":       return prop.get("number")
+    if t == "number":       v = prop.get("number"); return v if v is not None else ""
     if t == "date":         d = prop.get("date"); return d["start"] if d else ""
     return ""
+
+def _num(prop) -> float:
+    v = _text(prop)
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return 0.0
 
 def _p(page): return page.get("properties", {})
 
 
-# ── OUTILS STRATÉGIQUES (ce dont Antoine a besoin pour décider) ───────────────
+# ── OUTILS STRATÉGIQUES ────────────────────────────────────────────────────────
 
 def get_bilan_equipement(nom: str) -> dict:
-    """Données d'usure et de vie restante pour évaluer la pertinence d'un remplacement."""
-    res = _notion.databases.query(
-        database_id=DB_EQUIPEMENTS,
-        filter={"property": "Équipement", "title": {"contains": nom}}
+    """État de dégradation et données de fiabilité pour évaluer un remplacement CAPEX."""
+    res = _notion_query(
+        DB_MACHINES,
+        filter_obj={"property": "Nom Machine", "title": {"contains": nom}}
     )
-    if not res["results"]: return {"erreur": f"'{nom}' non trouvé"}
-    p = _p(res["results"][0])
-    heures      = float(_text(p.get("Heures de fonctionnement total")) or 0)
-    rul_nominal = float(_text(p.get("RUL nominal (h)")) or 72)
+    if not res:
+        return {"erreur": f"'{nom}' non trouvé dans la base machines"}
+    p = _p(res[0])
+    rul_jours    = _num(p.get("RUL (jours)"))
+    score_deg    = _num(p.get("Score dégradation (%)"))
     return {
-        "equipement":        _text(p.get("Équipement")),
-        "statut":            _text(p.get("Statut")),
-        "fabricant":         _text(p.get("Fabricant")),
-        "modele":            _text(p.get("Modèle")),
-        "mise_en_service":   _text(p.get("Date de mise en service")),
-        "heures_total":      heures,
-        "rul_nominal_h":     rul_nominal,
-        "taux_usure_pct":    round(min(100, heures / (rul_nominal * 100) * 100), 1),
-        "notes":             _text(p.get("Notes")),
+        "machine":               _text(p.get("Nom Machine")),
+        "id_machine":            _text(p.get("ID Machine")),
+        "type":                  _text(p.get("Type")),
+        "statut":                _text(p.get("Statut")),
+        "rul_jours":             rul_jours,
+        "score_degradation_pct": score_deg,
+        "vie_restante_pct":      round(100 - score_deg, 1),
+        "temperature_actuelle":  _text(p.get("Température actuelle (°C)")),
+        "vibration_actuelle":    _text(p.get("Vibration actuelle (mm/s)")),
+        "seuil_temp":            _text(p.get("Seuil température (°C)")),
+        "seuil_vib":             _text(p.get("Seuil vibration (mm/s)")),
+        "unite":                 _text(p.get("Unité / Zone")),
+        "responsable":           _text(p.get("Responsable")),
+        "derniere_inspection":   _text(p.get("Dernière inspection")),
+        "prochaine_maintenance": _text(p.get("Prochaine maintenance")),
+        "notes_ia":              _text(p.get("Notes IA")),
     }
+
 
 def get_historique_couts_maintenance(equipement: str) -> dict:
     """Coûts cumulés de maintenance et tendance — pour calculer le point mort CAPEX."""
-    res = _notion.databases.query(
-        database_id=DB_MAINTENANCE,
-        filter={"property": "Équipement", "rich_text": {"contains": equipement}},
+    res = _notion_query(
+        DB_HISTORIQUE,
+        filter_obj={"property": "Machine", "rich_text": {"contains": equipement}},
+        sorts=[{"property": "Date intervention", "direction": "descending"}]
     )
-    toutes, realisees = [], []
-    cout_total_realise = 0
-    cout_total_planifie = 0
-    for page in res["results"]:
-        p = _p(page)
+    toutes, terminees, prescriptives = [], [], []
+    cout_total   = 0.0
+    cout_arrets  = 0.0
+
+    for page in res:
+        p      = _p(page)
         statut = _text(p.get("Statut"))
-        cout   = float(_text(p.get("Coût estimé (€)")) or 0)
+        type_  = _text(p.get("Type"))
+        cout   = _num(p.get("Coût intervention (€)"))
+        arret  = _num(p.get("Coût arrêt production (€)"))
         entry  = {
-            "intervention":   _text(p.get("Intervention")),
-            "type":           _text(p.get("Type d'intervention")),
-            "statut":         statut,
-            "priorite":       _text(p.get("Priorité")),
-            "date":           _text(p.get("Date planifiée")) or _text(p.get("Date réalisée")),
-            "duree_h":        _text(p.get("Durée estimée (h)")),
-            "cout_estime":    cout,
+            "titre":           _text(p.get("Titre intervention")),
+            "type":            type_,
+            "statut":          statut,
+            "date":            _text(p.get("Date intervention")),
+            "duree_estimee_h": _text(p.get("Durée estimée (h)")),
+            "duree_reelle_h":  _text(p.get("Durée réelle (h)")),
+            "cout_eur":        cout,
+            "cout_arret_eur":  arret,
+            "rul_avant":       _text(p.get("RUL avant intervention (j)")),
+            "rul_apres":       _text(p.get("RUL après intervention (j)")),
         }
         toutes.append(entry)
-        if statut == "Réalisée":
-            realisees.append(entry)
-            cout_total_realise += cout
-        else:
-            cout_total_planifie += cout
+        if statut == "Terminée":
+            terminees.append(entry)
+            cout_total  += cout
+            cout_arrets += arret
+            if type_ == "Maintenance prescriptive":
+                prescriptives.append(entry)
+
+    roi = round(cout_arrets / cout_total, 1) if cout_total > 0 else 0
 
     return {
-        "nb_interventions_total":    len(toutes),
-        "nb_interventions_realisees": len(realisees),
-        "cout_total_realise_eur":    cout_total_realise,
-        "cout_total_planifie_eur":   cout_total_planifie,
-        "cout_total_cumule_eur":     cout_total_realise + cout_total_planifie,
-        "detail_interventions":      toutes,
+        "nb_interventions":       len(toutes),
+        "nb_terminees":           len(terminees),
+        "nb_prescriptives":       len(prescriptives),
+        "cout_total_maintenance": round(cout_total, 2),
+        "couts_arrets_evites":    round(cout_arrets, 2),
+        "roi_maintenance":        roi,
+        "detail_interventions":   toutes[:10],  # 10 plus récentes
     }
+
 
 def get_exposition_financiere_production(equipement: str) -> dict:
-    """Coût d'exposition totale si la machine tombe en panne non planifiée (tous OF impactés)."""
-    res = _notion.databases.query(
-        database_id=DB_OF,
-        filter={"property": "Équipement concerné", "rich_text": {"contains": equipement}}
+    """Coût d'exposition totale si la machine tombe en panne non planifiée."""
+    res = _notion_query(
+        DB_ORDRES_FAB,
+        filter_obj={"property": "Machine impactée", "rich_text": {"contains": equipement}}
     )
-    exposition_totale = 0
+    exposition_totale = 0.0
     details = []
-    for page in res["results"]:
-        p = _p(page)
-        cout_h = float(_text(p.get("Coût arrêt horaire (€)")) or 0)
-        qte_c  = float(_text(p.get("Quantité cible"))   or 0)
-        qte_r  = float(_text(p.get("Quantité réalisée")) or 0)
-        pct    = round((qte_r / qte_c * 100) if qte_c else 0, 1)
-        # Estimation : 7h d'arrêt non planifié en moyenne
-        perte_estimee = cout_h * 7
-        exposition_totale += perte_estimee
+    for page in res:
+        p       = _p(page)
+        cout    = _num(p.get("Coût arrêt (€)"))
+        duree_h = _num(p.get("Durée arrêt (h)"))
+        qte_p   = _num(p.get("Quantité prévue"))
+        qte_r   = _num(p.get("Quantité réalisée"))
+        pct     = round((qte_r / qte_p * 100) if qte_p else 0, 1)
+        exposition_totale += cout
         details.append({
-            "of":             _text(p.get("Ordre de Fabrication")),
-            "statut":         _text(p.get("Statut")),
+            "reference":      _text(p.get("Référence OF")),
+            "statut":         _text(p.get("Statut OF")),
+            "produit":        _text(p.get("Produit")),
+            "ligne":          _text(p.get("Ligne de production")),
             "avancement_pct": pct,
-            "cout_arret_h":   cout_h,
-            "perte_7h":       perte_estimee,
-            "ligne_secours":  _text(p.get("Ligne de secours disponible")),
+            "cout_arret_eur": cout,
+            "duree_arret_h":  duree_h,
+            "impact_rul":     _text(p.get("Impact RUL")),
+            "date_fin":       _text(p.get("Date fin prévue")),
         })
+
     return {
-        "exposition_financiere_totale_eur": exposition_totale,
-        "hypothese": "Arrêt non planifié de 7h en pic de charge",
-        "of_impactes": details,
+        "exposition_financiere_totale_eur": round(exposition_totale, 2),
+        "nb_of_impactes": len(details),
+        "of_impactes":    details,
     }
 
+
 def get_etat_stock_strategique(equipement: str) -> dict:
-    """Valeur immobilisée en stock + pièces critiques manquantes — vision trésorerie."""
-    res = _notion.databases.query(
-        database_id=DB_STOCK,
-        filter={"property": "Équipements compatibles", "rich_text": {"contains": equipement}}
+    """Valeur immobilisée en stock + pièces critiques — vision trésorerie."""
+    res = _notion_query(
+        DB_PIECES,
+        filter_obj={"property": "Machine concernée", "rich_text": {"contains": equipement}}
     )
-    valeur_stock = 0
+    valeur_stock = 0.0
     pieces = []
-    for page in res["results"]:
-        p = _p(page)
-        stock = float(_text(p.get("Stock actuel")) or 0)
-        prix  = float(_text(p.get("Prix unitaire (€)")) or 0)
-        valeur_stock += stock * prix
+    for page in res:
+        p       = _p(page)
+        stock   = _num(p.get("Stock actuel"))
+        prix    = _num(p.get("Prix unitaire (€)"))
+        valeur  = round(stock * prix, 2)
+        statut  = _text(p.get("Statut stock"))
+        valeur_stock += valeur
         pieces.append({
-            "composant":    _text(p.get("Composant")),
-            "stock":        stock,
-            "prix_u":       prix,
-            "valeur_immo":  round(stock * prix, 2),
-            "statut":       _text(p.get("Statut stock")),
-            "critique":     _text(p.get("Critique")),
-            "delai_reappro":_text(p.get("Délai réappro (jours)")),
+            "designation":     _text(p.get("Désignation pièce")),
+            "reference":       _text(p.get("Référence")),
+            "categorie":       _text(p.get("Catégorie")),
+            "stock":           stock,
+            "stock_minimum":   _text(p.get("Stock minimum")),
+            "prix_unitaire":   prix,
+            "valeur_immobilisee": valeur,
+            "statut_stock":    statut,
+            "fournisseur":     _text(p.get("Fournisseur")),
+            "delai_livraison": _text(p.get("Délai livraison (j)")),
         })
+
     return {
         "valeur_stock_immobilisee_eur": round(valeur_stock, 2),
-        "nb_references":                len(pieces),
-        "pieces_en_rupture":            [p for p in pieces if p["statut"] == "Rupture"],
-        "pieces_alerte":                [p for p in pieces if "Alerte" in p["statut"]],
-        "detail_stock":                 pieces,
+        "nb_references":       len(pieces),
+        "pieces_en_rupture":   [p for p in pieces if p["statut_stock"] == "Rupture"],
+        "pieces_alerte":       [p for p in pieces if "Alerte" in p["statut_stock"]],
+        "detail_stock":        pieces,
     }
 
 
@@ -172,31 +239,32 @@ def get_etat_stock_strategique(equipement: str) -> dict:
 TOOLS = [
     {
         "name": "get_bilan_equipement",
-        "description": "Récupère le bilan de vie de l'équipement : âge, heures de fonctionnement, taux d'usure estimé. Permet d'évaluer si un remplacement CAPEX est justifié.",
+        "description": "Récupère le bilan de vie de l'équipement : RUL, score de dégradation, vie restante estimée. Permet d'évaluer si un remplacement CAPEX est justifié.",
         "input_schema": {"type": "object", "properties": {"nom": {"type": "string"}}, "required": ["nom"]}
     },
     {
         "name": "get_historique_couts_maintenance",
-        "description": "Calcule les coûts cumulés de maintenance (réalisés + planifiés). Clé pour le calcul du ROI et la comparaison CAPEX vs OPEX.",
+        "description": "Calcule les coûts cumulés de maintenance (réalisés), le ROI de la maintenance prescriptive et la tendance des coûts. Clé pour comparaison CAPEX vs OPEX.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
         "name": "get_exposition_financiere_production",
-        "description": "Estime l'exposition financière totale en cas de panne non planifiée : perte de production sur tous les OF actifs. Quantifie le risque résiduel.",
+        "description": "Estime l'exposition financière totale en cas de panne non planifiée sur tous les OF actifs. Quantifie le risque résiduel production.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
         "name": "get_etat_stock_strategique",
-        "description": "Analyse la valeur immobilisée en stock de pièces détachées et identifie les pièces critiques manquantes. Vision trésorerie et risque approvisionnement.",
+        "description": "Analyse la valeur immobilisée en stock de pièces détachées et identifie les ruptures. Vision trésorerie et risque approvisionnement.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     }
 ]
 
+
 def _execute(name, inputs):
-    if name == "get_bilan_equipement":                  return get_bilan_equipement(inputs["nom"])
-    if name == "get_historique_couts_maintenance":      return get_historique_couts_maintenance(inputs["equipement"])
-    if name == "get_exposition_financiere_production":  return get_exposition_financiere_production(inputs["equipement"])
-    if name == "get_etat_stock_strategique":            return get_etat_stock_strategique(inputs["equipement"])
+    if name == "get_bilan_equipement":                 return get_bilan_equipement(inputs["nom"])
+    if name == "get_historique_couts_maintenance":     return get_historique_couts_maintenance(inputs["equipement"])
+    if name == "get_exposition_financiere_production": return get_exposition_financiere_production(inputs["equipement"])
+    if name == "get_etat_stock_strategique":           return get_etat_stock_strategique(inputs["equipement"])
     return {"erreur": f"Outil inconnu : {name}"}
 
 
@@ -210,7 +278,7 @@ comparer les scénarios CAPEX vs OPEX et quantifier le ROI de la maintenance pre
 
 Format de réponse attendu :
 1. **Synthèse exécutive** : 3 lignes max, chiffres clés
-2. **Analyse OPEX** : coûts de maintenance cumulés et trajectoire
+2. **Analyse OPEX** : coûts de maintenance cumulés, ROI prescriptif, tendance
 3. **Analyse CAPEX** : justification ou non du remplacement avec point mort financier
 4. **Exposition au risque** : perte financière estimée en cas de panne non maîtrisée
 5. **Recommandation CODIR** : décision à présenter avec justification chiffrée
@@ -219,18 +287,18 @@ Sois synthétique et chiffré. Antoine parle au CODIR, pas à un technicien.
 """
 
 
-# ── FONCTION PRINCIPALE (appelée depuis pages/3_Antoine.py) ──────────────────
+# ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
 def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> str:
     """
     Lance l'agent Antoine pour une analyse stratégique d'un équipement.
     Retourne l'analyse ROI/CAPEX en texte Markdown.
     """
-    rul_info = f"\n- RUL actuel estimé : {c_rul}h" if c_rul else ""
+    rul_info = f"\n- RUL actuel estimé : {c_rul}j" if c_rul else ""
     situation = (
         f"ANALYSE STRATÉGIQUE — {equipement}{rul_info}\n\n"
         f"Réalise une analyse complète CAPEX vs OPEX pour cet équipement : "
-        f"coûts de maintenance cumulés, exposition financière production, "
-        f"état du stock. Formule une recommandation pour le CODIR."
+        f"état de dégradation, coûts de maintenance cumulés, exposition financière production, "
+        f"état du stock. Calcule le ROI et formule une recommandation pour le CODIR."
     )
 
     messages = [{"role": "user", "content": situation}]

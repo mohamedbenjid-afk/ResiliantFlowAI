@@ -14,7 +14,7 @@ def _get_secret(key):
         return os.environ.get(key, "")
 
 
-# ── CLIENT NOTION via requests (compatible toutes versions) ──────────────────
+# ── CLIENT NOTION via requests ────────────────────────────────────────────────
 def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None) -> list:
     """Requête Notion Database API directement via requests."""
     token = _get_secret("NOTION_TOKEN")
@@ -28,97 +28,130 @@ def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None)
     if filter_obj: payload["filter"] = filter_obj
     if sorts:      payload["sorts"]  = sorts
 
-    resp = _requests.post(url, headers=headers, json=payload, timeout=15)
-    if not resp.ok:
-        return []
-    return resp.json().get("results", [])
+    results, has_more, cursor = [], True, None
+    while has_more:
+        if cursor:
+            payload["start_cursor"] = cursor
+        resp = _requests.post(url, headers=headers, json=payload, timeout=15)
+        if not resp.ok:
+            return []
+        data = resp.json()
+        results.extend(data.get("results", []))
+        has_more = data.get("has_more", False)
+        cursor   = data.get("next_cursor")
+    return results
 
-DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
-DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
-DB_STOCK       = "7229437a-027a-440f-a7be-5e37157f3b8d"
+
+# ── IDs des bases Notion ResilientFlow ───────────────────────────────────────
+DB_MACHINES   = "5279cb2a42b54b42936e22313521f825"   # Machines & équipements
+DB_HISTORIQUE = "6f53558bfbee455891efa53b6536d892"   # Historique & plan de maintenance
+DB_PIECES     = "c22138baa8ca4806b19403108735bc68"   # Pièces détachées
 
 
 # ── HELPERS NOTION ────────────────────────────────────────────────────────────
 def _text(prop):
     if not prop: return ""
     t = prop.get("type")
-    if t == "title":       return "".join(r["plain_text"] for r in prop.get("title", []))
-    if t == "rich_text":   return "".join(r["plain_text"] for r in prop.get("rich_text", []))
-    if t == "select":      s = prop.get("select"); return s["name"] if s else ""
-    if t == "multi_select":return ", ".join(o["name"] for o in prop.get("multi_select", []))
-    if t == "number":      return prop.get("number")
-    if t == "date":        d = prop.get("date"); return d["start"] if d else ""
+    if t == "title":        return "".join(r["plain_text"] for r in prop.get("title", []))
+    if t == "rich_text":    return "".join(r["plain_text"] for r in prop.get("rich_text", []))
+    if t == "select":       s = prop.get("select"); return s["name"] if s else ""
+    if t == "multi_select": return ", ".join(o["name"] for o in prop.get("multi_select", []))
+    if t == "number":       v = prop.get("number"); return v if v is not None else ""
+    if t == "date":         d = prop.get("date"); return d["start"] if d else ""
     return ""
 
 def _p(page): return page.get("properties", {})
 
 
-# ── OUTILS TERRAIN (ce dont Lionel a besoin sur le terrain) ───────────────────
+# ── OUTILS TERRAIN ────────────────────────────────────────────────────────────
 
 def get_fiche_equipement(nom: str) -> dict:
-    """Seuils, signe d'usure connus, technicien référent."""
-    res = _notion_query(DB_EQUIPEMENTS, filter_obj={"property": "Équipement", "title": {"contains": nom}}, sorts=None)
-    if not res: return {"erreur": f"'{nom}' non trouvé"}
+    """Seuils, état de dégradation et prochaine maintenance prévue."""
+    res = _notion_query(
+        DB_MACHINES,
+        filter_obj={"property": "Nom Machine", "title": {"contains": nom}}
+    )
+    if not res:
+        return {"erreur": f"'{nom}' non trouvé dans la base machines"}
     p = _p(res[0])
     return {
-        "equipement":     _text(p.get("Équipement")),
-        "statut":         _text(p.get("Statut")),
-        "fabricant":      _text(p.get("Fabricant")),
-        "modele":         _text(p.get("Modèle")),
-        "seuil_temp":     _text(p.get("Seuil Température (°C)")),
-        "seuil_vib":      _text(p.get("Seuil Vibration (mm/s)")),
-        "seuil_pres":     _text(p.get("Seuil Pression (bar)")),
-        "rul_nominal_h":  _text(p.get("RUL nominal (h)")),
-        "heures_total":   _text(p.get("Heures de fonctionnement total")),
-        "notes_usure":    _text(p.get("Notes")),
+        "machine":               _text(p.get("Nom Machine")),
+        "id_machine":            _text(p.get("ID Machine")),
+        "type":                  _text(p.get("Type")),
+        "statut":                _text(p.get("Statut")),
+        "rul_jours":             _text(p.get("RUL (jours)")),
+        "temperature_actuelle":  _text(p.get("Température actuelle (°C)")),
+        "vibration_actuelle":    _text(p.get("Vibration actuelle (mm/s)")),
+        "score_degradation_pct": _text(p.get("Score dégradation (%)")),
+        "seuil_temp":            _text(p.get("Seuil température (°C)")),
+        "seuil_vib":             _text(p.get("Seuil vibration (mm/s)")),
+        "unite":                 _text(p.get("Unité / Zone")),
+        "responsable":           _text(p.get("Responsable")),
+        "derniere_inspection":   _text(p.get("Dernière inspection")),
+        "prochaine_maintenance": _text(p.get("Prochaine maintenance")),
+        "notes_ia":              _text(p.get("Notes IA")),
     }
+
 
 def get_procedure_intervention(equipement: str, type_anomalie: str) -> dict:
-    """Procédure d'intervention planifiée la plus proche pour ce type d'anomalie."""
-    res = _notion_query(DB_MAINTENANCE, filter_obj={"and": [
-            {"property": "Équipement",  "rich_text": {"contains": equipement}},
-            {"property": "Statut",      "select":    {"equals": "Planifiée"}}
+    """Intervention planifiée la plus pertinente pour ce type d'anomalie."""
+    res = _notion_query(
+        DB_HISTORIQUE,
+        filter_obj={"and": [
+            {"property": "Machine",  "rich_text": {"contains": equipement}},
+            {"property": "Statut",   "select":    {"equals": "Planifiée"}},
         ]},
-        sorts=[{"property": "Date planifiée", "direction": "ascending"}])
-    if not res: return {"info": "Aucune procédure planifiée trouvée"}
-    # Cherche d'abord une intervention liée au type d'anomalie, sinon prend la plus proche
+        sorts=[{"property": "Date intervention", "direction": "ascending"}]
+    )
+    if not res:
+        return {"info": "Aucune intervention planifiée trouvée — contacter Sophie pour planification"}
+
+    # Cherche une intervention liée au type d'anomalie, sinon prend la plus proche
     for page in res:
         p = _p(page)
-        titre = _text(p.get("Intervention")).lower()
-        if any(kw in titre for kw in [type_anomalie.lower(), "joint", "roulement", "vibr", "surchauf"]):
-            return _format_maintenance(p)
-    return _format_maintenance(_p(res[0]))  # fallback: la plus proche
+        titre = _text(p.get("Titre intervention")).lower()
+        if any(kw in titre for kw in [type_anomalie.lower(), "joint", "roulement", "vibr", "surchauf", "pression"]):
+            return _format_intervention(p)
+    return _format_intervention(_p(res[0]))   # fallback : intervention la plus proche
 
-def _format_maintenance(p: dict) -> dict:
+
+def _format_intervention(p: dict) -> dict:
     return {
-        "intervention":   _text(p.get("Intervention")),
-        "type":           _text(p.get("Type d'intervention")),
-        "priorite":       _text(p.get("Priorité")),
-        "date_planifiee": _text(p.get("Date planifiée")),
-        "duree_h":        _text(p.get("Durée estimée (h)")),
+        "titre":          _text(p.get("Titre intervention")),
+        "type":           _text(p.get("Type")),
+        "statut":         _text(p.get("Statut")),
+        "date":           _text(p.get("Date intervention")),
+        "duree_estimee_h":_text(p.get("Durée estimée (h)")),
         "technicien":     _text(p.get("Technicien assigné")),
-        "habilitations":  _text(p.get("Habilitation requise")),
-        "composants":     _text(p.get("Composants à remplacer")),
-        "loto_requis":    _text(p.get("Procédure LOTO requise")),
-        "cout_estime":    _text(p.get("Coût estimé (€)")),
-        "description":    _text(p.get("Description")),
+        "pieces":         _text(p.get("Pièces remplacées")),
+        "actions":        _text(p.get("Actions réalisées")),
+        "cause_racine":   _text(p.get("Cause racine")),
+        "cout_eur":       _text(p.get("Coût intervention (€)")),
+        "observations":   _text(p.get("Observations")),
     }
 
+
 def get_disponibilite_piece(nom_piece: str) -> dict:
-    """Stock et emplacement magasin d'une pièce — ce que Lionel doit aller chercher."""
-    res = _notion_query(DB_STOCK, filter_obj={"property": "Composant", "title": {"contains": nom_piece}}, sorts=None)
-    if not res: return {"erreur": f"'{nom_piece}' non trouvé en magasin"}
+    """Stock et emplacement magasin d'une pièce."""
+    res = _notion_query(
+        DB_PIECES,
+        filter_obj={"property": "Désignation pièce", "title": {"contains": nom_piece}}
+    )
+    if not res:
+        return {"erreur": f"'{nom_piece}' non trouvé en magasin"}
     p = _p(res[0])
     stock = _text(p.get("Stock actuel"))
-    seuil = _text(p.get("Stock minimum (seuil alerte)"))
     return {
-        "composant":     _text(p.get("Composant")),
-        "stock_actuel":  stock,
-        "statut_stock":  _text(p.get("Statut stock")),
-        "emplacement":   _text(p.get("Emplacement magasin")),
-        "critique":      _text(p.get("Critique")),
-        "delai_reappro": _text(p.get("Délai réappro (jours)")),
-        "notes":         _text(p.get("Notes")),
+        "designation":     _text(p.get("Désignation pièce")),
+        "reference":       _text(p.get("Référence")),
+        "categorie":       _text(p.get("Catégorie")),
+        "stock_actuel":    stock,
+        "stock_minimum":   _text(p.get("Stock minimum")),
+        "statut_stock":    _text(p.get("Statut stock")),
+        "emplacement":     _text(p.get("Emplacement magasin")),
+        "fournisseur":     _text(p.get("Fournisseur")),
+        "delai_livraison": _text(p.get("Délai livraison (j)")),
+        "notes":           _text(p.get("Notes")),
         "dispo_immediate": int(stock or 0) > 0,
     }
 
@@ -127,20 +160,36 @@ def get_disponibilite_piece(nom_piece: str) -> dict:
 TOOLS = [
     {
         "name": "get_fiche_equipement",
-        "description": "Récupère la fiche technique de l'équipement : seuils d'alerte, heures de fonctionnement, signes d'usure connus, statut actuel.",
-        "input_schema": {"type": "object", "properties": {"nom": {"type": "string", "description": "Nom de l'équipement ex: 'Pompe P-17'"}}, "required": ["nom"]}
+        "description": "Récupère la fiche technique de la machine : seuils d'alerte (température, vibration), score de dégradation, RUL, prochaine maintenance et notes IA.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"nom": {"type": "string", "description": "Nom de la machine ex: 'Pompe P-17'"}},
+            "required": ["nom"]
+        }
     },
     {
         "name": "get_procedure_intervention",
-        "description": "Récupère la procédure d'intervention planifiée la plus pertinente : étapes, LOTO, habilitations requises, pièces à préparer.",
-        "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}, "type_anomalie": {"type": "string", "description": "Nature du problème ex: 'vibration', 'surchauffe', 'pression'"}}, "required": ["equipement", "type_anomalie"]}
+        "description": "Récupère l'intervention planifiée la plus pertinente : titre, type, date, durée estimée, technicien assigné, pièces à préparer.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "equipement":    {"type": "string"},
+                "type_anomalie": {"type": "string", "description": "Nature du problème ex: 'vibration', 'surchauffe', 'pression'"}
+            },
+            "required": ["equipement", "type_anomalie"]
+        }
     },
     {
         "name": "get_disponibilite_piece",
-        "description": "Vérifie si une pièce est disponible en magasin et indique son emplacement exact pour que Lionel puisse aller la chercher.",
-        "input_schema": {"type": "object", "properties": {"nom_piece": {"type": "string", "description": "Nom ou mot-clé de la pièce ex: 'joint', 'roulement', 'filtre'"}}, "required": ["nom_piece"]}
+        "description": "Vérifie si une pièce est disponible en magasin et indique son emplacement exact.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"nom_piece": {"type": "string", "description": "Nom ou mot-clé de la pièce ex: 'joint', 'roulement', 'filtre'"}},
+            "required": ["nom_piece"]
+        }
     }
 ]
+
 
 def _execute(name, inputs):
     if name == "get_fiche_equipement":       return get_fiche_equipement(inputs["nom"])
@@ -165,7 +214,7 @@ Sois direct. Lionel est sur le terrain, pas derrière un bureau. Pas de blabla.
 """
 
 
-# ── FONCTION PRINCIPALE (appelée depuis pages/1_Lionel.py) ───────────────────
+# ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
 def run_agent_lionel(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> str:
     """
     Lance l'agent Lionel avec les valeurs capteurs courantes.

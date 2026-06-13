@@ -10,10 +10,12 @@ Intégration dans pages/4_Leila.py :
 
 import os, json
 from datetime import date
-from notion_client import Client
+import requests as _requests
+
 import sys, os as _os
 sys.path.append(_os.path.join(_os.path.dirname(__file__), '..'))
 from llm_client import chat as _llm_chat
+
 
 def _get_secret(key):
     try:
@@ -22,11 +24,39 @@ def _get_secret(key):
     except Exception:
         return os.environ.get(key, "")
 
-_notion = Client(auth=_get_secret("NOTION_TOKEN"))
 
-DB_MAINTENANCE = "1c9d8c5d-e394-490a-b913-e0cf833abb5b"
-DB_EQUIPEMENTS = "f8c546b6-40b6-484c-b686-6a6ad42520ee"
-DB_STOCK       = "7229437a-027a-440f-a7be-5e37157f3b8d"
+# ── CLIENT NOTION via requests ────────────────────────────────────────────────
+def _notion_query(database_id: str, filter_obj: dict = None, sorts: list = None) -> list:
+    token = _get_secret("NOTION_TOKEN")
+    url   = f"https://api.notion.com/v1/databases/{database_id}/query"
+    headers = {
+        "Authorization":  f"Bearer {token}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type":   "application/json",
+    }
+    payload = {}
+    if filter_obj: payload["filter"] = filter_obj
+    if sorts:      payload["sorts"]  = sorts
+
+    results, has_more, cursor = [], True, None
+    while has_more:
+        if cursor:
+            payload["start_cursor"] = cursor
+        resp = _requests.post(url, headers=headers, json=payload, timeout=15)
+        if not resp.ok:
+            return []
+        data = resp.json()
+        results.extend(data.get("results", []))
+        has_more = data.get("has_more", False)
+        cursor   = data.get("next_cursor")
+    return results
+
+
+# ── IDs des bases Notion ResilientFlow ───────────────────────────────────────
+DB_HISTORIQUE = "6f53558bfbee455891efa53b6536d892"   # Historique & plan de maintenance
+DB_PIECES     = "c22138baa8ca4806b19403108735bc68"   # Pièces détachées
+DB_HSE        = "b6ab3a9bd41d4967add92f27d1cd2d5c"   # Documentation & HSE
+DB_EQUIPE     = "0a82b4f53a26491c81e64b0cb8bb058c"   # Équipe maintenance (habilitations)
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -36,9 +66,10 @@ def _text(prop):
     if t == "title":        return "".join(r["plain_text"] for r in prop.get("title", []))
     if t == "rich_text":    return "".join(r["plain_text"] for r in prop.get("rich_text", []))
     if t == "select":       s = prop.get("select"); return s["name"] if s else ""
-    if t == "multi_select": return ", ".join(o["name"] for o in prop.get("multi_select", []))
-    if t == "number":       return prop.get("number")
+    if t == "multi_select": return [o["name"] for o in prop.get("multi_select", [])]
+    if t == "number":       v = prop.get("number"); return v if v is not None else ""
     if t == "date":         d = prop.get("date"); return d["start"] if d else ""
+    if t == "url":          return prop.get("url") or ""
     return ""
 
 def _p(page): return page.get("properties", {})
@@ -67,40 +98,65 @@ NORMES_LOTO = {
 }
 
 
-# ── OUTILS HSE (ce dont Leila a besoin pour la conformité) ───────────────────
+# ── OUTILS HSE ────────────────────────────────────────────────────────────────
 
 def get_exigences_hse_intervention(equipement: str) -> dict:
-    """Habilitations requises et procédure LOTO pour les interventions planifiées."""
-    res = _notion.databases.query(
-        database_id=DB_MAINTENANCE,
-        filter={"and": [
-            {"property": "Équipement", "rich_text": {"contains": equipement}},
-            {"property": "Statut",     "select":    {"equals": "Planifiée"}}
-        ]},
-        sorts=[{"property": "Date planifiée", "direction": "ascending"}]
+    """Documents HSE, exigences EPI et procédures LOTO pour cet équipement."""
+    # Documents HSE associés à la machine
+    docs_res = _notion_query(
+        DB_HSE,
+        filter_obj={"property": "Machine concernée", "rich_text": {"contains": equipement}}
     )
-    interventions_hse = []
-    for page in res["results"]:
+    docs_hse = []
+    for page in docs_res:
         p = _p(page)
-        loto     = _text(p.get("Procédure LOTO requise"))
-        hab      = _text(p.get("Habilitation requise"))
-        priorite = _text(p.get("Priorité"))
-        interventions_hse.append({
-            "intervention":     _text(p.get("Intervention")),
-            "priorite":         priorite,
-            "date":             _text(p.get("Date planifiée")),
-            "technicien":       _text(p.get("Technicien assigné")),
-            "habilitations":    hab,
-            "loto_requis":      loto,
-            "duree_h":          _text(p.get("Durée estimée (h)")),
-            "risque_critique":  priorite in ("P1 - Critique", "P2 - Haute") or loto == "Oui",
+        docs_hse.append({
+            "titre":           _text(p.get("Titre document")),
+            "type":            _text(p.get("Type")),
+            "statut":          _text(p.get("Statut")),
+            "niveau_risque":   _text(p.get("Niveau risque")),
+            "epi_obligatoires":_text(p.get("EPI obligatoires")),   # list
+            "persona":         _text(p.get("Persona destinataire")), # list
+            "resume":          _text(p.get("Contenu résumé")),
+            "lien":            _text(p.get("Lien document")),
+            "date_validation": _text(p.get("Date validation")),
+            "date_revision":   _text(p.get("Date révision")),
         })
+
+    # Habilitations de l'équipe
+    equipe_res = _notion_query(DB_EQUIPE)
+    habilitations = [{
+        "technicien":   _text(_p(p).get("Nom Technicien")),
+        "habilitations":_text(_p(p).get("Habilitations")),  # list
+        "disponibilite":_text(_p(p).get("Disponibilité")),
+        "zone":         _text(_p(p).get("Zone assignée")),
+    } for p in equipe_res]
+
+    # Interventions planifiées
+    interv_res = _notion_query(
+        DB_HISTORIQUE,
+        filter_obj={"and": [
+            {"property": "Machine", "rich_text": {"contains": equipement}},
+            {"property": "Statut",  "select":    {"equals": "Planifiée"}},
+        ]},
+        sorts=[{"property": "Date intervention", "direction": "ascending"}]
+    )
+    interventions = [{
+        "titre":     _text(_p(p).get("Titre intervention")),
+        "type":      _text(_p(p).get("Type")),
+        "date":      _text(_p(p).get("Date intervention")),
+        "technicien":_text(_p(p).get("Technicien assigné")),
+        "duree_h":   _text(_p(p).get("Durée estimée (h)")),
+    } for p in interv_res]
+
     return {
-        "interventions_hse":  interventions_hse or [{"info": "Aucune intervention planifiée"}],
-        "nb_loto_requis":     sum(1 for i in interventions_hse if i["loto_requis"] == "Oui"),
-        "nb_risque_critique": sum(1 for i in interventions_hse if i["risque_critique"]),
-        "norme_loto":         NORMES_LOTO,
+        "docs_hse":               docs_hse or [{"info": "Aucun document HSE associé"}],
+        "nb_docs_hse":            len(docs_hse),
+        "habilitations_equipe":   habilitations,
+        "interventions_planifiees": interventions or [{"info": "Aucune intervention planifiée"}],
+        "norme_loto":             NORMES_LOTO,
     }
+
 
 def get_matrice_risques_capteurs(c_temp: float, c_vib: float, c_pres: float) -> dict:
     """Génère la matrice de risques à partir des valeurs capteurs en temps réel."""
@@ -155,64 +211,71 @@ def get_matrice_risques_capteurs(c_temp: float, c_vib: float, c_pres: float) -> 
         })
 
     return {
-        "date_evaluation":  date.today().isoformat(),
-        "equipement":       "Pompe P-17",
-        "nb_risques":       len(risques),
-        "risque_maximal":   max((r["niveau"] for r in risques), key=lambda x: ["FAIBLE","MODÉRÉ","ÉLEVÉ"].index(x)),
+        "date_evaluation":    date.today().isoformat(),
+        "equipement":         "Pompe P-17",
+        "nb_risques":         len(risques),
+        "risque_maximal":     max((r["niveau"] for r in risques),
+                                  key=lambda x: ["FAIBLE","MODÉRÉ","ÉLEVÉ"].index(x)),
         "risques_identifies": risques,
-        "loto_obligatoire": True,
-        "norme_reference":  "ISO 45001:2018 — Management de la santé et sécurité au travail",
+        "loto_obligatoire":   True,
+        "norme_reference":    "ISO 45001:2018 — Management de la santé et sécurité au travail",
     }
 
+
 def get_conformite_pieces(equipement: str) -> dict:
-    """Vérifie si les pièces utilisées ont une traçabilité fournisseur conforme (réf. fabricant renseignée)."""
-    res = _notion.databases.query(
-        database_id=DB_STOCK,
-        filter={"property": "Équipements compatibles", "rich_text": {"contains": equipement}}
+    """Vérifie la traçabilité réglementaire des pièces (référence + fournisseur)."""
+    res = _notion_query(
+        DB_PIECES,
+        filter_obj={"property": "Machine concernée", "rich_text": {"contains": equipement}}
     )
     conformes, non_conformes = [], []
-    for page in res["results"]:
-        p = _p(page)
-        ref   = _text(p.get("Réf. fabricant"))
-        fourn = _text(p.get("Fournisseur principal"))
+    for page in res:
+        p     = _p(page)
+        ref   = _text(p.get("Référence"))
+        fourn = _text(p.get("Fournisseur"))
         entry = {
-            "composant":    _text(p.get("Composant")),
-            "ref_fab":      ref,
-            "fournisseur":  fourn,
-            "conforme":     bool(ref and fourn),
+            "designation": _text(p.get("Désignation pièce")),
+            "reference":   ref,
+            "fournisseur": fourn,
+            "statut_stock":_text(p.get("Statut stock")),
+            "conforme":    bool(ref and fourn),
         }
         if entry["conforme"]:
             conformes.append(entry)
         else:
             non_conformes.append(entry)
 
+    total = len(conformes) + len(non_conformes)
     return {
-        "taux_conformite_pct":   round(len(conformes) / max(len(conformes) + len(non_conformes), 1) * 100, 1),
-        "pieces_conformes":      conformes,
-        "pieces_non_conformes":  non_conformes,
-        "observation":           "Toutes pièces conformes" if not non_conformes
-                                 else f"{len(non_conformes)} pièce(s) sans traçabilité fournisseur complète",
+        "taux_conformite_pct":  round(len(conformes) / max(total, 1) * 100, 1),
+        "nb_pieces_total":      total,
+        "pieces_conformes":     conformes,
+        "pieces_non_conformes": non_conformes,
+        "observation":          "Toutes pièces conformes" if not non_conformes
+                                else f"{len(non_conformes)} pièce(s) sans traçabilité complète",
     }
 
+
 def generer_rapport_audit(equipement: str, technicien: str = "Lionel") -> dict:
-    """Génère les métadonnées du dossier de preuve ISO 45001 (horodatage, référence, statut)."""
+    """Génère les métadonnées du dossier de preuve ISO 45001."""
     today = date.today().isoformat()
     ref   = f"RF_AUDIT_ISO45001_{equipement.replace(' ', '_').replace('-', '')}_{today}.pdf"
     return {
-        "reference_dossier":    ref,
-        "date_generation":      today,
-        "technicien_concerne":  technicien,
-        "equipement":           equipement,
-        "norme":                "ISO 45001:2018",
+        "reference_dossier":   ref,
+        "date_generation":     today,
+        "technicien_concerne": technicien,
+        "equipement":          equipement,
+        "norme":               "ISO 45001:2018",
         "contenu_dossier": [
             "Matrice des risques identifiés (générée automatiquement)",
             "Liste EPI obligatoires validée",
             "Procédure LOTO appliquée (étapes horodatées)",
             "Habilitations technicien vérifiées",
-            "Traçabilité pièces détachées (réf. fournisseur)",
+            "Traçabilité pièces détachées (référence fournisseur)",
+            "Documents HSE machine consultés",
             "Signature électronique agent ResilientFlow AI",
         ],
-        "statut": "Généré — Prêt pour transmission organisme certificateur",
+        "statut":         "Généré — Prêt pour transmission organisme certificateur",
         "validite_jours": 90,
     }
 
@@ -221,7 +284,7 @@ def generer_rapport_audit(equipement: str, technicien: str = "Lionel") -> dict:
 TOOLS = [
     {
         "name": "get_exigences_hse_intervention",
-        "description": "Récupère les exigences HSE (habilitations, LOTO) de toutes les interventions planifiées. Permet de vérifier la conformité du planning avec la réglementation.",
+        "description": "Récupère les documents HSE, exigences EPI, habilitations de l'équipe et interventions planifiées pour cet équipement. Permet de vérifier la conformité réglementaire.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
@@ -239,7 +302,7 @@ TOOLS = [
     },
     {
         "name": "get_conformite_pieces",
-        "description": "Vérifie la traçabilité réglementaire des pièces détachées utilisées (référence fabricant + fournisseur). Essentiel pour la conformité ISO 45001.",
+        "description": "Vérifie la traçabilité réglementaire des pièces détachées (référence + fournisseur). Essentiel pour la conformité ISO 45001.",
         "input_schema": {"type": "object", "properties": {"equipement": {"type": "string"}}, "required": ["equipement"]}
     },
     {
@@ -256,11 +319,12 @@ TOOLS = [
     }
 ]
 
+
 def _execute(name, inputs):
-    if name == "get_exigences_hse_intervention":  return get_exigences_hse_intervention(inputs["equipement"])
-    if name == "get_matrice_risques_capteurs":     return get_matrice_risques_capteurs(inputs["c_temp"], inputs["c_vib"], inputs["c_pres"])
-    if name == "get_conformite_pieces":            return get_conformite_pieces(inputs["equipement"])
-    if name == "generer_rapport_audit":            return generer_rapport_audit(inputs["equipement"], inputs.get("technicien", "Lionel"))
+    if name == "get_exigences_hse_intervention": return get_exigences_hse_intervention(inputs["equipement"])
+    if name == "get_matrice_risques_capteurs":   return get_matrice_risques_capteurs(inputs["c_temp"], inputs["c_vib"], inputs["c_pres"])
+    if name == "get_conformite_pieces":          return get_conformite_pieces(inputs["equipement"])
+    if name == "generer_rapport_audit":          return generer_rapport_audit(inputs["equipement"], inputs.get("technicien", "Lionel"))
     return {"erreur": f"Outil inconnu : {name}"}
 
 
@@ -282,7 +346,7 @@ Sois précis sur les normes (EN, ISO, NF). Leila répond devant un auditeur exte
 """
 
 
-# ── FONCTION PRINCIPALE (appelée depuis pages/4_Leila.py) ────────────────────
+# ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
 def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> str:
     """
     Lance l'agent Leila avec les valeurs capteurs courantes.
