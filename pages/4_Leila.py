@@ -74,10 +74,19 @@ st.write(
     "a reçu les consignes et la liste d'EPI appropriés avant d'ouvrir sa boîte à outils."
 )
 
+# ── Initialisation session_state pour persister le PDF entre reruns ───────────
+if "audit_pdf_bytes" not in st.session_state:
+    st.session_state.audit_pdf_bytes = None
+if "audit_pdf_ref" not in st.session_state:
+    st.session_state.audit_pdf_ref = None
+if "audit_pdf_src" not in st.session_state:
+    st.session_state.audit_pdf_src = None
+
 if st.button("📥 Générer le dossier de conformité pour l'organisme de certification", use_container_width=True):
+    # Stopper le refresh pendant la génération
+    st.session_state.running = False
     with st.spinner("Génération du dossier ISO 45001 en cours…"):
         try:
-            # ── Imports ──────────────────────────────────────────────────────
             import notion_client as nc
             from utils.pdf_audit import generate_audit_pdf
 
@@ -91,16 +100,11 @@ if st.button("📥 Générer le dossier de conformité pour l'organisme de certi
                     machines[0] if machines else {}
                 )
                 machine_id = machine.get("id") or machine.get("notion_id", "")
-                equipe    = nc.get_equipe()
-                pieces    = nc.get_pieces(machine_id=machine_id) if machine_id else nc.get_pieces()
-                docs_hse  = nc.get_docs_hse(machine_id=machine_id) if machine_id else nc.get_docs_hse()
+                equipe   = nc.get_equipe()
+                pieces   = nc.get_pieces(machine_id=machine_id) if machine_id else nc.get_pieces()
+                docs_hse = nc.get_docs_hse(machine_id=machine_id) if machine_id else nc.get_docs_hse()
                 notion_ok = True
-            except Exception as notion_err:
-                st.warning(
-                    f"⚠️ Notion indisponible ({notion_err.__class__.__name__}) — "
-                    "le dossier sera généré avec les données capteurs uniquement."
-                )
-                # Données de référence minimales pour le PDF
+            except Exception:
                 machine = {
                     "nom": "Pompe P-17", "type": "Pompe centrifuge", "site": "Unité B",
                     "criticite": "Critique", "mise_en_service": "2021-03-15",
@@ -117,19 +121,17 @@ if st.button("📥 Générer le dossier de conformité pour l'organisme de certi
                     {"reference": "KSB-IMP-P17",  "designation": "Roue hydraulique P17", "quantite_stock": 0, "statut_stock": "Rupture",  "fournisseur": "KSB"},
                 ]
                 docs_hse = [
-                    {"titre": "Notice de sécurité KSB Etanorm", "type": "Notice fabricant", "version": "v3.2", "date_maj": "2023-06"},
-                    {"titre": "Procédure LOTO Unité B",          "type": "Procédure interne","version": "v2.1", "date_maj": "2024-01"},
-                    {"titre": "Fiche de données sécurité huile",  "type": "FDS",              "version": "v1.0", "date_maj": "2022-11"},
+                    {"titre": "Notice de sécurité KSB Etanorm", "type": "Notice fabricant",  "version": "v3.2", "date_maj": "2023-06"},
+                    {"titre": "Procédure LOTO Unité B",          "type": "Procédure interne", "version": "v2.1", "date_maj": "2024-01"},
+                    {"titre": "Fiche de données sécurité huile",  "type": "FDS",               "version": "v1.0", "date_maj": "2022-11"},
                 ]
 
-            # Technicien de service (premier disponible ou générique)
             technicien_data = next(
                 (m for m in equipe if m.get("disponibilite") == "Disponible"),
                 equipe[0] if equipe else {}
             )
             technicien_nom = technicien_data.get("nom", "Technicien de service")
 
-            # Anomalie déduite des capteurs
             if c_temp >= 110:
                 type_anomalie = "Surchauffe stator — température critique"
             elif c_vib >= 4.5:
@@ -139,7 +141,6 @@ if st.button("📥 Générer le dossier de conformité pour l'organisme de certi
             else:
                 type_anomalie = "Dégradation générale — RUL critique"
 
-            # ── Construction du contexte PDF ─────────────────────────────────
             context = {
                 "equipement"   : "Pompe P-17",
                 "technicien"   : technicien_nom,
@@ -154,32 +155,38 @@ if st.button("📥 Générer le dossier de conformité pour l'organisme de certi
                 "type_anomalie": type_anomalie,
             }
 
-            # ── Génération PDF ───────────────────────────────────────────────
             pdf_bytes = generate_audit_pdf(context)
 
-            # ── Référence du dossier (miroir de pdf_audit.py) ────────────────
             from datetime import date
             today_str = date.today().strftime("%Y%m%d")
             now_str   = datetime.now().strftime("%H%M")
             ref = f"RF_AUDIT_ISO45001_PompeP17_{today_str}_{now_str}"
 
-            src_label = "Notion + capteurs" if notion_ok else "capteurs uniquement (Notion hors ligne)"
-            st.success(f"✅ Dossier de preuve généré — référence `{ref}` — Source : {src_label}")
-            st.caption("Statut : Horodatage certifié | Signature électronique SHA-256 de l'agent AI intégrée.")
-
-            st.download_button(
-                label="⬇️ Télécharger le dossier PDF",
-                data=pdf_bytes,
-                file_name=f"{ref}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
+            # ── Persister en session_state pour survivre au rerun ─────────────
+            st.session_state.audit_pdf_bytes = pdf_bytes
+            st.session_state.audit_pdf_ref   = ref
+            st.session_state.audit_pdf_src   = "Notion + capteurs" if notion_ok else "capteurs uniquement (Notion hors ligne)"
 
         except ImportError as e:
             st.error(f"❌ Dépendance manquante : {e}\n\nInstaller avec : `pip install reportlab`")
         except Exception as e:
             st.error(f"❌ Erreur lors de la génération : {e}")
             st.exception(e)
+
+# ── Bouton de téléchargement persistant (hors du if st.button) ───────────────
+if st.session_state.audit_pdf_bytes is not None:
+    ref = st.session_state.audit_pdf_ref
+    src = st.session_state.audit_pdf_src
+    st.success(f"✅ Dossier de preuve prêt — référence `{ref}` — Source : {src}")
+    st.caption("Statut : Horodatage certifié | Signature électronique SHA-256 de l'agent AI intégrée.")
+    st.download_button(
+        label="⬇️ Télécharger le dossier PDF",
+        data=st.session_state.audit_pdf_bytes,
+        file_name=f"{ref}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+        key="dl_audit_pdf",
+    )
 
 # ── AUTO-REFRESH ──────────────────────────────────────────────────────────────
 if st.session_state.running:
