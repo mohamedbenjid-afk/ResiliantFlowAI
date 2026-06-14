@@ -476,52 +476,97 @@ Sois synthétique et chiffré. Antoine parle au CODIR. Jamais plus de 3 niveaux 
 # ── FONCTION PRINCIPALE ────────────────────────────────────────────────────────
 def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> dict:
     """
-    Lance l'agent Antoine. Retourne un dict :
+    Lance l'agent Antoine.
+
+    Stratégie : pré-fetch de toutes les données en Python, puis
+    UN SEUL appel LLM pour rédiger l'analyse. Compatible 1min.ai et Anthropic.
+
+    Retourne un dict :
       analyse    : texte Markdown LLM
       scenarios  : dict brut 3 scénarios NPV (pour PDF CODIR)
       portfolio  : ranking machines (pour PDF CODIR)
       bilan      : bilan équipement
       historique : KPIs MTBF/MTTR/ROI
     """
-    rul_info  = f"\n- RUL capteur actuel : {c_rul}j" if c_rul else ""
-    situation = (
-        f"ANALYSE STRATÉGIQUE — {equipement}{rul_info}\n\n"
-        "1. Portfolio toutes machines → priorité relative.\n"
-        f"2. Bilan dégradation {equipement}.\n"
-        "3. Historique coûts, MTBF, MTTR.\n"
-        "4. Exposition financière production.\n"
-        "5. Simulation 3 scénarios (correctif / prescriptif / remplacement).\n"
-        "6. Recommandation CODIR chiffrée."
+    # ── 1. Pré-fetch toutes les données directement ───────────────────────────
+    raw_portfolio  = get_top_equipements_a_risque()
+    raw_bilan      = get_bilan_equipement(equipement)
+    raw_historique = get_historique_couts_maintenance(equipement)
+    raw_exposition = get_exposition_financiere_production(equipement)
+    raw_stock      = get_etat_stock_strategique(equipement)
+    raw_scenarios  = simuler_scenarios_investissement(equipement)
+
+    # ── 2. Construire le contexte complet pour le LLM ─────────────────────────
+    rul_info = f" | RUL capteur : {c_rul}j" if c_rul else ""
+
+    sc      = raw_scenarios.get("scenarios", {})
+    a_cout  = sc.get("A_correctif_pur",       {}).get("cout_total_eur", 0)
+    b_cout  = sc.get("B_maintien_prescriptif",{}).get("cout_total_eur", 0)
+    c_cout  = sc.get("C_remplacement",         {}).get("cout_total_eur", 0)
+    a_npv   = sc.get("A_correctif_pur",       {}).get("npv_eur", 0)
+    b_npv   = sc.get("B_maintien_prescriptif",{}).get("npv_eur", 0)
+    c_npv   = sc.get("C_remplacement",         {}).get("npv_eur", 0)
+    payback = sc.get("C_remplacement",         {}).get("payback_vs_correctif_mois")
+    reco    = raw_scenarios.get("recommandation_financiere", "—")
+    eco     = raw_scenarios.get("economie_prescriptif_vs_correctif_eur", 0)
+
+    portfolio_lines = "\n".join(
+        f"  - {m['machine']} ({m['unite']}) : RUL={m['rul_jours']}j, "
+        f"dégradation={m['score_degradation_pct']}%, risque={m['score_risque']}/100 {m['niveau_risque']}"
+        for m in raw_portfolio.get("ranking", [])
     )
 
-    messages = [{"role": "user", "content": situation}]
-    raw_portfolio = raw_scenarios = raw_bilan = raw_historique = None
+    hist = raw_historique
+    contexte = f"""
+DONNÉES D'ANALYSE — {equipement}{rul_info}
 
-    while True:
-        resp = _llm_chat(system=SYSTEM, messages=messages, tools=TOOLS, max_tokens=3000)
-        if resp.stop_reason == "end_turn":
-            return {
-                "analyse":    resp.final_text(),
-                "scenarios":  raw_scenarios,
-                "portfolio":  raw_portfolio,
-                "bilan":      raw_bilan,
-                "historique": raw_historique,
-            }
-        if resp.stop_reason == "tool_use":
-            results = []
-            for tc in resp.tool_calls():
-                out = _execute(tc["name"], tc["input"])
-                if tc["name"] == "get_top_equipements_a_risque":      raw_portfolio  = out
-                if tc["name"] == "simuler_scenarios_investissement":   raw_scenarios  = out
-                if tc["name"] == "get_bilan_equipement":              raw_bilan      = out
-                if tc["name"] == "get_historique_couts_maintenance":  raw_historique = out
-                results.append({
-                    "type":        "tool_result",
-                    "tool_use_id": tc.get("id", "tc0"),
-                    "content":     json.dumps(out, ensure_ascii=False),
-                })
-            messages.append({"role": "assistant", "content": resp.content})
-            messages.append({"role": "user",      "content": results})
+## PORTFOLIO ({raw_portfolio.get('nb_machines', 0)} machines)
+{portfolio_lines or "Aucune machine disponible."}
+
+## BILAN ÉQUIPEMENT {equipement}
+- Statut : {raw_bilan.get('statut', '—')} | Unité : {raw_bilan.get('unite', '—')}
+- RUL : {raw_bilan.get('rul_jours', '—')} j | Dégradation : {raw_bilan.get('score_degradation_pct', '—')} %
+- Température : {raw_bilan.get('temperature_actuelle', '—')} °C (seuil {raw_bilan.get('seuil_temp', '—')} °C)
+- Vibration : {raw_bilan.get('vibration_actuelle', '—')} mm/s (seuil {raw_bilan.get('seuil_vib', '—')} mm/s)
+
+## HISTORIQUE MAINTENANCE
+- {hist.get('nb_interventions', 0)} interventions dont {hist.get('nb_pannes_correctives', 0)} pannes correctives
+- MTBF : {hist.get('mtbf_jours', '—')} j | MTTR : {hist.get('mttr_heures', '—')} h
+- OPEX cumulé : {hist.get('cout_total_maintenance_eur', 0):,.0f} €
+- Arrêts évités par prescriptif : {hist.get('couts_arrets_evites_eur', 0):,.0f} €
+- ROI prescriptif : × {hist.get('roi_maintenance', '—')}
+
+## EXPOSITION FINANCIÈRE PRODUCTION
+- Exposition si panne non planifiée : {raw_exposition.get('exposition_financiere_totale_eur', 0):,.0f} €
+- Ordres de fabrication impactés : {raw_exposition.get('nb_of_impactes', 0)}
+
+## STOCK PIÈCES DÉTACHÉES
+- Valeur immobilisée : {raw_stock.get('valeur_stock_immobilisee_eur', 0):,.0f} €
+- Pièces en rupture : {len(raw_stock.get('pieces_en_rupture', []))} | En alerte : {len(raw_stock.get('pieces_alerte', []))}
+
+## SIMULATION 3 SCÉNARIOS (horizon {raw_scenarios.get('horizon_ans', 3)} ans)
+| Scénario | Coût total | NPV |
+|---|---|---|
+| A — Correctif pur | {a_cout:,.0f} € | {a_npv:,.0f} € |
+| B — Maintien prescriptif | {b_cout:,.0f} € | {b_npv:,.0f} € |
+| C — Remplacement ({raw_scenarios.get('hypotheses', {}).get('cout_remplacement_eur', 85000):,.0f} €) | {c_cout:,.0f} € | {c_npv:,.0f} € |
+Point mort C vs A : {payback} mois | Économie B vs A : {eco:,.0f} €
+Recommandation financière : {reco}
+"""
+
+    messages = [{"role": "user", "content": contexte}]
+
+    # ── 3. Un seul appel LLM pour rédiger l'analyse ───────────────────────────
+    resp    = _llm_chat(system=SYSTEM, messages=messages, max_tokens=2500)
+    analyse = resp.final_text()
+
+    return {
+        "analyse":    analyse,
+        "scenarios":  raw_scenarios,
+        "portfolio":  raw_portfolio,
+        "bilan":      raw_bilan,
+        "historique": raw_historique,
+    }
 
 
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
