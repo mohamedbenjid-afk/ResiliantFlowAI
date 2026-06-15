@@ -329,3 +329,61 @@ def get_metriques_roi() -> dict:
         "machines_alerte":    len(machines_alerte),
         "detail_alertes":     machines_alerte,
     }
+
+
+# ── CRÉER UNE INTERVENTION (POST) ─────────────────────────────────────────────
+
+def create_intervention(data: dict) -> dict:
+    """
+    Crée un enregistrement dans l'Historique Maintenance Notion.
+
+    Champs attendus dans `data` (tous optionnels sauf titre) :
+        titre, machine, type, statut, technicien,
+        date (ISO 8601), duree_reelle, cout, rul_avant,
+        cause_racine, actions, pieces, observations
+    """
+    url = f"{NOTION_BASE_URL}/pages"
+    body = {
+        "parent": {"database_id": DB_IDS["historique"]},
+        "properties": {
+            "Titre intervention": {
+                "title": [{"text": {"content": data.get("titre", "Intervention")}}]
+            },
+            "Machine": {
+                "rich_text": [{"text": {"content": data.get("machine", "")}}]
+            },
+            "Type": {
+                "select": {"name": data.get("type", "Maintenance prescriptive")}
+            },
+            "Statut": {
+                "select": {"name": data.get("statut", "Terminée")}
+            },
+            "Technicien assigné": {
+                "rich_text": [{"text": {"content": data.get("technicien", "")}}]
+            },
+            "Actions réalisées": {
+                "rich_text": [{"text": {"content": data.get("actions", "")}}]
+            },
+            "Pièces remplacées": {
+                "rich_text": [{"text": {"content": data.get("pieces", "")}}]
+            },
+            "Observations": {
+                "rich_text": [{"text": {"content": data.get("observations", "")}}]
+            },
+        },
+    }
+
+    if data.get("date"):
+        body["properties"]["Date intervention"] = {"date": {"start": data["date"]}}
+    if data.get("duree_reelle") is not None:
+        body["properties"]["Durée réelle (h)"] = {"number": float(data["duree_reelle"])}
+    if data.get("cout") is not None:
+        body["properties"]["Coût intervention (€)"] = {"number": float(data["cout"])}
+    if data.get("rul_avant") is not None:
+        body["properties"]["RUL avant intervention (j)"] = {"number": float(data["rul_avant"])}
+    if data.get("cause_racine"):
+        body["properties"]["Cause racine"] = {"select": {"name": data["cause_racine"]}}
+
+    resp = requests.post(url, headers=_headers(), json=body, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
