@@ -125,16 +125,16 @@ with tab0:
     hist = st.session_state.history
 
     ch1, ch2, ch3 = st.columns(3)
-    for col, key, label, color, unit in [
-        (ch1, "temp", "Température", "#ef4444", "°C"),
-        (ch2, "vib",  "Vibration",   "#f59e0b", "mm/s"),
-        (ch3, "rul",  "RUL",         "#3b82f6", "j"),
+    for col, key, label, color, fill_color, unit in [
+        (ch1, "temp", "Température", "#ef4444", "rgba(239,68,68,0.15)",   "°C"),
+        (ch2, "vib",  "Vibration",   "#f59e0b", "rgba(245,158,11,0.15)",  "mm/s"),
+        (ch3, "rul",  "RUL",         "#3b82f6", "rgba(59,130,246,0.15)",  "j"),
     ]:
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=list(hist["time"]), y=list(hist[key]),
             mode="lines", line=dict(color=color, width=2), fill="tozeroy",
-            fillcolor=color.replace(")", ",0.1)").replace("rgb", "rgba") if color.startswith("rgb") else color + "22",
+            fillcolor=fill_color,
         ))
         fig.update_layout(
             title=dict(text=f"{label} ({unit})", font=dict(size=13)),
