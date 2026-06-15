@@ -99,9 +99,9 @@ with tab0:
     with rul_col:
         st.markdown(f"### ⏱ RUL estimé : **{c_rul} jours**")
         st.progress(rul_pct)
-        if c_rul <= 48:
+        if c_rul <= 60:
             st.markdown(
-                f'<span class="threshold-label">⚠️ Seuil critique franchi — intervention recommandée</span>',
+                f'<span class="threshold-label">⚠️ Seuil opérationnel franchi — intervention recommandée</span>',
                 unsafe_allow_html=True,
             )
     with status_col:
@@ -112,8 +112,8 @@ with tab0:
             unsafe_allow_html=True,
         )
 
-    # AI agent when critical
-    if c_rul <= 24:
+    # AI agent when critical (RUL ≤ 5 j = scénario surchauffe)
+    if c_rul <= 5:
         with st.expander("🤖 Recommandation IA — Agent Lionel", expanded=True):
             with st.spinner("Analyse en cours..."):
                 recommendation = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)

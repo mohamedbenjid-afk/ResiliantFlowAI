@@ -115,8 +115,15 @@ def update_sensors():
         c_pres = max(0.1, st.session_state.base_pres + np.random.uniform(-0.05, 0.05))
         c_cur  = max(0.0, st.session_state.base_cur  + np.random.uniform(-0.2,  0.2))
 
-        stress = max(0, (c_temp - 60) / 50 * 0.4 + (c_vib / 5) * 0.3 + (c_pres / 8) * 0.3)
-        c_rul  = max(0, int(72 * (1 - stress ** 1.2)))
+        # Stress basé sur des seuils opérationnels :
+        #   temp  : neutre ≤ 70 °C   → max = 85 °C
+        #   vib   : neutre ≤ 1 mm/s  → max = 4 mm/s
+        temp_stress = max(0.0, (c_temp - 70.0) / 15.0)
+        vib_stress  = max(0.0, (c_vib  -  1.0) /  3.0)
+        pres_stress = max(0.0, abs(c_pres - 4.5) / 4.0)
+        stress = min(1.0, temp_stress * 0.50 + vib_stress * 0.40 + pres_stress * 0.10)
+        # Exposant 3 → Nominal ≈ 70 j  |  Surchauffe ≈ 1 j
+        c_rul  = max(0, int(72 * (1.0 - stress) ** 3))
 
         for key, val in zip(["temp", "vib", "pres", "rul"], [c_temp, c_vib, c_pres, c_rul]):
             st.session_state.history[key].append(val)
@@ -132,6 +139,6 @@ def update_sensors():
         c_cur  = st.session_state.base_cur
         c_rul  = st.session_state.history["rul"][-1]
 
-    r_status = "Nominal" if c_rul > 48 else ("Alerte" if c_rul > 24 else "Critique")
+    r_status = "Nominal" if c_rul > 60 else ("Alerte" if c_rul > 2 else "Critique")
     rul_pct  = float(max(0.0, min(1.0, c_rul / 72.0)))
     return c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct
