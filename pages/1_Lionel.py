@@ -33,8 +33,7 @@ if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True
 st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
 st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
 st.sidebar.caption("RUL estimé : " + str(c_rul) + " heures")
-if st.sidebar.button("⬅️ Retour à l'accueil", use_container_width=True):
-    st.switch_page("streamlit_home.py")
+st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", use_container_width=True)
 
 # ── CONTENU PRINCIPAL ─────────────────────────────────────────────────────────
 st.markdown("### 🔧 Terminal Opérationnel de Terrain — Lionel")
