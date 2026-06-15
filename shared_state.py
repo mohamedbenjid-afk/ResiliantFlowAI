@@ -54,30 +54,83 @@ CONTEXTE_USINE = {
 }
 
 
-# ── CSS COMMUN ────────────────────────────────────────────────────────────────
+# ── PALETTE COULEURS (light theme uniquement) ─────────────────────────────────
+# Primaire  : #1a3a5c  (bleu marine profond)
+# Accent    : #2563eb  (bleu électrique — boutons, liens)
+# Fond page : #f4f7fb
+# Fond carte: #ffffff
+# Bordure   : #dde3ee
+# Texte     : #1e293b  (principal)  /  #64748b (secondaire)
+# Succès    : #15803d / bg #f0fdf4
+# Alerte    : #d97706 / bg #fffbeb
+# Danger    : #dc2626 / bg #fef2f2
+# ESCP gold : #c9a227
+
 COMMON_CSS = """
 <style>
-.stApp { background-color: #ffffff; }
+/* ── Fond général ── */
+.stApp { background-color: #f4f7fb; }
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background-color: #1a3a5c !important;
+}
+section[data-testid="stSidebar"] * {
+    color: #e8eef6 !important;
+}
+section[data-testid="stSidebar"] .stButton button {
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 6px !important;
+}
+section[data-testid="stSidebar"] .stButton button:hover {
+    background-color: #1d4ed8 !important;
+}
+
+/* ── Métriques ── */
 div[data-testid="stMetric"] {
-    background-color: #fcfcfc !important;
-    border: 1px solid #eeeeee !important;
-    padding: 8px 15px !important;
-    border-radius: 5px !important;
+    background-color: #ffffff !important;
+    border: 1px solid #dde3ee !important;
+    border-radius: 8px !important;
+    padding: 12px 16px !important;
 }
-.threshold-label {
-    color: #ef4444; font-size: 0.75rem; font-weight: bold;
-    display: block; margin-top: -10px; margin-bottom: 5px;
-}
-.doc-box {
-    background-color: #f0fdf4; border: 1px solid #bbf7d0;
-    padding: 15px; border-radius: 5px;
-    margin-top: 10px; margin-bottom: 10px;
-}
+div[data-testid="stMetricValue"] { color: #1a3a5c !important; font-weight: 700 !important; }
+div[data-testid="stMetricLabel"] { color: #64748b !important; font-size: 0.78rem !important; }
+
+/* ── Bannière ESCP ── */
 .escp-banner {
-    background-color: #002349; color: #ffffff;
-    padding: 12px; border-radius: 4px; text-align: center;
-    margin-top: 5px; margin-bottom: 15px; font-size: 0.85rem;
-    border-left: 4px solid #d4af37;
+    background-color: #1a3a5c; color: #ffffff;
+    padding: 10px 14px; border-radius: 6px; text-align: center;
+    margin-bottom: 14px; font-size: 0.82rem; line-height: 1.5;
+    border-left: 4px solid #c9a227;
+}
+
+/* ── Boîte doc / prescriptions ── */
+.doc-box {
+    background-color: #f0fdf4; border: 1px solid #86efac;
+    padding: 15px; border-radius: 6px;
+    margin-top: 10px; margin-bottom: 10px;
+    color: #14532d;
+}
+
+/* ── Seuil rouge sliders ── */
+.threshold-label {
+    color: #dc2626; font-size: 0.73rem; font-weight: 600;
+    display: block; margin-top: -8px; margin-bottom: 6px;
+}
+
+/* ── Cartes info ── */
+div[data-testid="stInfo"]    { border-radius: 6px !important; }
+div[data-testid="stSuccess"] { border-radius: 6px !important; }
+div[data-testid="stWarning"] { border-radius: 6px !important; }
+div[data-testid="stError"]   { border-radius: 6px !important; }
+
+/* ── Onglets ── */
+button[data-baseweb="tab"] { font-weight: 600 !important; }
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #2563eb !important;
+    border-bottom-color: #2563eb !important;
 }
 </style>
 """

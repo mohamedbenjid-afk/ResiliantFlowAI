@@ -24,11 +24,11 @@ for key in ["antoine_result", "antoine_pdf_bytes", "antoine_pdf_ref"]:
 st.sidebar.markdown("""
     <div class="escp-banner">
         🎓 <b>Projet de Fin d'Études ESCP</b><br>
-        ⚙️ <i>Maintenance Prescriptive & Industrie 4.0</i>
+        🏭 <i>Maintenance Prescriptive &amp; Industrie 4.0</i>
     </div>
 """, unsafe_allow_html=True)
 
-st.sidebar.markdown("### ResilientFlow AI\n*Couche Prescriptive v1*")
+st.sidebar.markdown("### 🏭 ResilientFlow AI\n*Couche Prescriptive v1*")
 
 if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True):
     st.session_state.running = not st.session_state.running
@@ -39,7 +39,7 @@ st.sidebar.caption("RUL estimé : " + str(c_rul) + " heures")
 st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", use_container_width=True)
 
 # ── CONTENU PRINCIPAL ─────────────────────────────────────────────────────────
-st.markdown("### 📊 Indicateurs Stratégiques et ROI Financement — Antoine")
+st.markdown("### 📈 Indicateurs Stratégiques et ROI — Antoine")
 st.markdown("*Analyse multi-machine, MTBF/MTTR, simulation CAPEX vs OPEX et fiche CODIR.*")
 
 # ── KPIs statiques rapides ────────────────────────────────────────────────────

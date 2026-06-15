@@ -19,11 +19,11 @@ c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_percentage = update_sensors()
 st.sidebar.markdown("""
     <div class="escp-banner">
         🎓 <b>Projet de Fin d'Études ESCP</b><br>
-        ⚙️ <i>Maintenance Prescriptive & Industrie 4.0</i>
+        🏭 <i>Maintenance Prescriptive &amp; Industrie 4.0</i>
     </div>
 """, unsafe_allow_html=True)
 
-st.sidebar.markdown("### ResilientFlow AI\n*Couche Prescriptive v1*")
+st.sidebar.markdown("### 🏭 ResilientFlow AI\n*Couche Prescriptive v1*")
 
 if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True):
     st.session_state.running = not st.session_state.running
@@ -34,7 +34,7 @@ st.sidebar.caption("RUL estimé : " + str(c_rul) + " heures")
 st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", use_container_width=True)
 
 # ── CONTENU PRINCIPAL ─────────────────────────────────────────────────────────
-st.markdown("### 📋 Espace d'Arbitrage et Pilotage des Ressources — Sophie")
+st.markdown("### 🗂️ Espace d'Arbitrage et Planification — Sophie")
 st.markdown("*Résolution des conflits de planification (Équipes, Pièces détachées, Fenêtres de production).*")
 
 if c_rul <= 24:
