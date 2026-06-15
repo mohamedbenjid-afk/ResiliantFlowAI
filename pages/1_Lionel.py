@@ -113,11 +113,23 @@ with tab0:
         )
 
     # AI agent when critical (RUL ≤ 5 j = scénario surchauffe)
+    # L'agent est appelé UNE SEULE FOIS à l'entrée en état critique, puis mis en cache
     if c_rul <= 5:
+        if st.session_state.get("_agent_status") != "Critique":
+            with st.spinner("🤖 Analyse IA en cours..."):
+                st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+            st.session_state["_agent_status"] = "Critique"
+
         with st.expander("🤖 Recommandation IA — Agent Lionel", expanded=True):
-            with st.spinner("Analyse en cours..."):
-                recommendation = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
-            st.markdown(recommendation)
+            st.markdown(st.session_state.get("_agent_reco", ""))
+            if st.button("🔄 Nouvelle analyse", key="btn_refresh_agent"):
+                with st.spinner("Analyse en cours..."):
+                    st.session_state["_agent_reco"] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+                st.rerun()
+    else:
+        # Réinitialise le cache quand on quitte l'état critique
+        st.session_state.pop("_agent_status", None)
+        st.session_state.pop("_agent_reco", None)
 
     # Trend charts
     st.markdown("---")
