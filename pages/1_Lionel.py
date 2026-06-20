@@ -204,21 +204,56 @@ with tab1:
     st.markdown("## 📋 Briefing du quart")
 
     # Machines en alerte
-    st.markdown("### 🚨 État du parc machines")
+    st.markdown("### 🚨 État du parc machines — classé par urgence")
+
+    def _urgency_rank(statut: str, rul: float) -> tuple:
+        """Clé de tri : (rang statut, RUL) — plus petit = plus urgent."""
+        rank = {"Critique": 0, "Alerte": 1, "Hors service": 2}.get(statut, 3)
+        return (rank, rul)
+
+    def _prescription(statut: str, rul: float, nom: str, is_p17: bool,
+                      temp: float = None, vib: float = None) -> str:
+        """Génère une prescription courte adaptée au contexte de la machine."""
+        if statut == "Critique" or rul <= 2:
+            if is_p17 and temp and temp > 75:
+                return "⚡ Surchauffe critique — déclencher procédure K2 immédiatement, arrêt production"
+            if is_p17 and vib and vib > 2.5:
+                return "⚡ Vibration critique — arrêt machine et inspection roulements avant remise en route"
+            return f"⚡ Intervention immédiate sur {nom} — RUL {rul} j, risque panne imminente"
+        elif statut == "Alerte" or rul <= 20:
+            if is_p17:
+                return f"⏰ Planifier intervention P-17 sous 48h — vérifier graissage et circuit refroidissement"
+            return f"⏰ Planifier maintenance {nom} cette semaine — RUL {rul} j"
+        elif statut == "Hors service":
+            return f"🔧 {nom} hors service — attendre validation technique avant remise en route"
+        else:
+            return f"✅ Surveillance standard — RUL {rul} j, prochain contrôle selon planning"
+
     try:
         machines = nc.get_machines()
         if machines:
+            # Override P-17 avec valeurs simulateur
             for m in machines:
-                nom   = m.get("nom", "?")
-                mid   = m.get("id", "")
-                # Pour P-17 : utilise le RUL et statut du simulateur (K0) pour cohérence
+                mid = m.get("id", "")
+                nom = m.get("nom", "")
                 if "P-17" in mid or "P-17" in nom:
-                    rul    = c_rul
-                    statut = r_status
-                else:
-                    rul    = m.get("rul_jours") or 0
-                    statut = m.get("statut") or "Inconnu"
-                # Couleurs selon statuts ESCP réels
+                    m["rul_jours"] = c_rul
+                    m["statut"]    = r_status
+            # Tri par urgence : Critique → Alerte → Hors service → Nominal, puis RUL croissant
+            machines_sorted = sorted(
+                machines,
+                key=lambda m: _urgency_rank(
+                    m.get("statut") or "Nominal",
+                    m.get("rul_jours") or 999
+                )
+            )
+            for m in machines_sorted:
+                nom    = m.get("nom", "?")
+                mid    = m.get("id", "")
+                rul    = m.get("rul_jours") or 0
+                statut = m.get("statut") or "Nominal"
+                is_p17 = "P-17" in mid or "P-17" in nom
+
                 if statut == "Critique" or rul <= 2:
                     bg, border, icon = "#fee2e2", "#ef4444", "🔴"
                 elif statut == "Alerte" or rul <= 20:
@@ -227,11 +262,20 @@ with tab1:
                     bg, border, icon = "#f3f4f6", "#6b7280", "⚫"
                 else:
                     bg, border, icon = "#f0fdf4", "#86efac", "🟢"
+
+                prescription = _prescription(
+                    statut, rul, nom, is_p17,
+                    temp=c_temp if is_p17 else None,
+                    vib=c_vib  if is_p17 else None,
+                )
                 st.markdown(
                     f'<div style="background:{bg};border-left:4px solid {border};'
                     f'border-radius:6px;padding:12px;margin-bottom:8px;">'
-                    f'{icon} <b>{nom}</b> ({mid}) — '
-                    f'RUL : <b>{rul} j</b> &nbsp;|&nbsp; Statut : <b>{statut}</b>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    f'<span>{icon} <b>{nom}</b> ({mid})</span>'
+                    f'<span style="font-size:0.82rem;color:#64748b;">RUL : <b>{rul} j</b> &nbsp;|&nbsp; {statut}</span>'
+                    f'</div>'
+                    f'<div style="font-size:0.85rem;margin-top:6px;color:#374151;">{prescription}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -239,14 +283,26 @@ with tab1:
             st.info("Aucune machine trouvée dans Notion.")
     except Exception as e:
         st.warning(f"Impossible de charger les machines : {e}")
-        # Fallback data
-        st.markdown("""
-        | Machine | RUL | Statut |
-        |---|---|---|
-        | Pompe P-17 | 18 j | 🔴 Alerte critique |
-        | Compresseur C-03 | 45 j | 🟡 Alerte |
-        | Convoyeur CV-01 | 72 j | 🟢 Nominal |
-        """)
+        fallback_machines = [
+            ("Pompe P-17",       "P-17", "Critique",      1,  "🔴", "#fee2e2", "#ef4444",
+             "⚡ Intervention immédiate — RUL 1 j, risque panne imminente"),
+            ("Compresseur C-03", "C-03", "Alerte",        18, "🟠", "#fef3c7", "#f59e0b",
+             "⏰ Planifier maintenance cette semaine — surveiller vibrations"),
+            ("Convoyeur CV-01",  "CV-01","Nominal",        72, "🟢", "#f0fdf4", "#86efac",
+             "✅ Surveillance standard — prochaine inspection dans 30 j"),
+        ]
+        for nom, mid, statut, rul, icon, bg, border, presc in fallback_machines:
+            st.markdown(
+                f'<div style="background:{bg};border-left:4px solid {border};'
+                f'border-radius:6px;padding:12px;margin-bottom:8px;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                f'<span>{icon} <b>{nom}</b> ({mid})</span>'
+                f'<span style="font-size:0.82rem;color:#64748b;">RUL : <b>{rul} j</b> &nbsp;|&nbsp; {statut}</span>'
+                f'</div>'
+                f'<div style="font-size:0.85rem;margin-top:6px;color:#374151;">{presc}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     # Interventions planifiées
     st.markdown("---")
@@ -364,6 +420,25 @@ with tab2:
 
     st.info(f"**Anomalie détectée :** {anomalie} — RUL : {c_rul} j — Statut : {r_status}")
 
+    # Durée et ressources estimées selon type d'anomalie
+    duree_map = {
+        "Surchauffe":           ("~35 min", "Roulements 6205-2RS + Mobilux EP2", "2 techniciens"),
+        "Vibration excessive":  ("~45 min", "Roulements + Garnitures mécaniques", "2 techniciens"),
+        "Pression insuffisante":("~20 min", "Joints d'étanchéité P17", "1 technicien"),
+        "Usure normale":        ("~25 min", "Filtres + vérification générale", "1 technicien"),
+    }
+    duree_est, pieces_est, equipe_est = duree_map.get(anomalie, ("~30 min", "À déterminer", "1 technicien"))
+    st.markdown(
+        f'<div style="background:#f0f9ff;border-left:4px solid #38bdf8;border-radius:6px;'
+        f'padding:10px 14px;margin-bottom:12px;font-size:0.9rem;">'
+        f'⏱ <b>Durée estimée : {duree_est}</b> &nbsp;|&nbsp; '
+        f'🔩 Pièces : {pieces_est} &nbsp;|&nbsp; '
+        f'👷 {equipe_est} &nbsp;|&nbsp; '
+        f'📦 Kit : casier B-07'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
     # Documents HSE depuis Notion
     with st.expander("📄 Documents HSE associés à P-17", expanded=False):
         try:
@@ -455,89 +530,107 @@ with tab3:
     st.markdown("## 📝 Rapport post-intervention")
 
     if st.session_state.get("k3_submitted"):
-        st.success("✅ Rapport déjà soumis pour cette session.")
+        # ── Confirmation post-soumission ─────────────────────────────────────
+        last = st.session_state.get("k3_last_payload", {})
+        st.success("✅ Rapport enregistré dans Notion !")
+        st.markdown(
+            f'<div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:6px;'
+            f'padding:14px;margin:8px 0;">'
+            f'<b>📋 Récapitulatif :</b><br>'
+            f'Machine : <b>{last.get("machine","—")}</b> &nbsp;|&nbsp; '
+            f'Type : <b>{last.get("type","—")}</b> &nbsp;|&nbsp; '
+            f'Statut : <b>{last.get("statut","—")}</b><br>'
+            f'<small style="color:#166534;">{last.get("actions","")[:120]}{"..." if len(last.get("actions","")) > 120 else ""}</small>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        # Notification Sophie
+        st.markdown(
+            '<div style="background:#eff6ff;border-left:4px solid #3b82f6;border-radius:6px;'
+            'padding:12px;margin-top:8px;">'
+            '📬 <b>Notification envoyée à Sophie (Manager Maintenance)</b><br>'
+            '<small style="color:#1e40af;">Sophie a été alertée automatiquement — '
+            'elle peut planifier la prochaine maintenance via son tableau de bord.</small>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         if st.button("📋 Soumettre un nouveau rapport"):
             st.session_state["k3_submitted"] = False
+            st.session_state.pop("k3_last_payload", None)
             st.rerun()
     else:
+        st.caption("5 questions — moins de 3 minutes")
         with st.form("form_post_intervention", clear_on_submit=False):
-            st.markdown("### Informations générales")
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                f_machine = st.selectbox(
-                    "Machine concernée",
-                    ["Pompe P-17 (P-17)", "Compresseur C-03", "Convoyeur CV-01", "Autre"],
-                    index=0,
-                )
-                f_date = st.date_input("Date de l'intervention", value=datetime.date.today())
-                f_technicien = st.text_input("Technicien(s)", value="Lionel B.")
-            with col_f2:
+
+            # Q1 — Machine
+            f_machine = st.selectbox(
+                "1️⃣  Machine concernée",
+                ["Pompe P-17 (P-17)", "Compresseur C-03 (C-03)",
+                 "Convoyeur CV-01 (CV-01)", "Autre"],
+                index=0,
+            )
+
+            col_q2, col_q3 = st.columns(2)
+            with col_q2:
+                # Q2 — Type
                 f_type = st.selectbox(
-                    "Type d'intervention",
+                    "2️⃣  Type d'intervention",
                     ["Prédictive", "Préventive", "Préventive conditionnelle",
                      "Corrective", "Inspection"],
                 )
+            with col_q3:
+                # Q3 — Statut final
                 f_statut = st.selectbox(
-                    "Statut",
+                    "3️⃣  Statut final",
                     ["Réalisée", "En cours", "Planifiée", "Annulée"],
                 )
-                f_duree = st.number_input("Durée réelle (h)", min_value=0.0, step=0.5, value=2.0)
 
-            st.markdown("### Détail de l'intervention")
+            # Q4 — Actions
             f_actions = st.text_area(
-                "Actions réalisées",
-                placeholder="Ex: Remplacement du roulement 6205-2RS, nettoyage du logement, regraissage...",
-                height=100,
+                "4️⃣  Actions réalisées",
+                placeholder="Ex : Remplacement roulement 6205-2RS, regraissage Mobilux EP2, remontage carter...",
+                height=90,
             )
-            f_pieces = st.text_area(
-                "Pièces remplacées",
-                placeholder="Ex: 1x Roulement 6205-2RS, 2x Joint torique Ø52...",
+
+            # Q5 — Observations / résultat
+            f_observations = st.text_area(
+                "5️⃣  Résultat & observations",
+                placeholder="Ex : Machine repart nominale — T=68°C, vib=0.9 mm/s, pression 4.2 bar...",
                 height=70,
             )
 
-            st.markdown("### Analyse & coûts")
-            col_f3, col_f4 = st.columns(2)
-            with col_f3:
-                f_cause = st.selectbox(
-                    "Cause racine",
-                    ["Usure normale", "Surcharge", "Défaut lubrification",
-                     "Corrosion", "Vibration excessive", "Surchauffe", "Inconnu"],
-                )
-                f_cout = st.number_input("Coût intervention (€)", min_value=0.0, step=50.0, value=350.0)
-            with col_f4:
-                f_rul_avant = st.number_input("RUL avant intervention (j)", min_value=0, step=1, value=int(c_rul))
-                f_observations = st.text_area("Observations / remarques", height=68)
-
             submitted = st.form_submit_button(
-                "📤 Enregistrer dans Notion", use_container_width=True, type="primary"
+                "📤 Valider et notifier Sophie", use_container_width=True, type="primary"
             )
 
         if submitted:
             machine_label = f_machine.split("(")[0].strip()
             machine_id    = f_machine.split("(")[-1].rstrip(")") if "(" in f_machine else f_machine
+            today         = datetime.date.today().isoformat()
             payload = {
-                "titre":       f"Intervention {machine_id} — {f_date.isoformat()}",
-                "machine":     machine_label,
-                "type":        f_type,
-                "statut":      f_statut,
-                "technicien":  f_technicien,
-                "date":        f_date.isoformat(),
-                "duree_reelle": f_duree,
-                "actions":     f_actions,
-                "pieces":      f_pieces,
-                "cause_racine": f_cause,
-                "cout":        f_cout,
-                "rul_avant":   f_rul_avant,
+                "titre":        f"Intervention {machine_id} — {today}",
+                "machine":      machine_label,
+                "type":         f_type,
+                "statut":       f_statut,
+                "technicien":   "Lionel B.",
+                "date":         today,
+                "date_realisee": today,
+                "duree_reelle": 0.0,     # non demandé — valeur neutre
+                "actions":      f_actions,
+                "pieces":       "",
+                "cause_racine": "",
+                "cout":         0.0,
+                "rul_avant":    c_rul,   # injecté automatiquement depuis le simulateur
                 "observations": f_observations,
             }
             try:
                 with st.spinner("Enregistrement dans Notion..."):
                     nc.create_intervention(payload)
-                    # Invalide le cache historique
                     nc.get_historique.clear()
-                st.session_state["k3_submitted"] = True
+                st.session_state["k3_submitted"]    = True
+                st.session_state["k3_last_payload"] = payload
                 st.balloons()
-                st.success("✅ Rapport enregistré dans la base Historique Maintenance Notion !")
+                st.rerun()
             except Exception as e:
                 st.error(f"Erreur Notion : {e}")
                 st.info("💡 Vérifiez que le token NOTION_TOKEN est configuré dans les secrets Streamlit.")
