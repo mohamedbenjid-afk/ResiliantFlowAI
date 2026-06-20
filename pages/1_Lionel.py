@@ -509,6 +509,9 @@ with tab4:
     st.markdown("## ⚖️ Arbitrage multi-machine")
     st.caption("Aide à la décision : quelle machine traiter en priorité ?")
 
+    # Dégradation simulée selon le statut du simulateur (pour P-17)
+    _DEG_BY_STATUS = {"Critique": 88, "Alerte": 45, "Nominal": 8}
+
     def score_alerte(machine: dict) -> float:
         """Calcule un score d'urgence 0–100 (100 = urgence maximale)."""
         rul  = machine.get("rul_jours") or 72
@@ -524,16 +527,28 @@ with tab4:
     except Exception:
         # Fallback — données fictives représentatives
         all_machines = [
-            {"id": "P-17",  "nom": "Pompe P-17",         "statut": "Alerte critique",
-             "rul_jours": 18, "score_degradation": 72, "temperature": 77.2, "vibration": 2.8,
-             "unite": "Unité B", "responsable": "Lionel B."},
+            {"id": "P-17",  "nom": "Pompe P-17",         "statut": "Alerte",
+             "rul_jours": 18, "score_degradation": 45, "temperature": 77.2, "vibration": 2.8,
+             "unite": "Unité B", "responsable": "Lionel Dumont"},
             {"id": "C-03",  "nom": "Compresseur C-03",   "statut": "Alerte",
-             "rul_jours": 31, "score_degradation": 48, "temperature": 65.1, "vibration": 1.4,
-             "unite": "Unité A", "responsable": "Marc D."},
-            {"id": "CV-01", "nom": "Convoyeur CV-01",    "statut": "En service",
-             "rul_jours": 65, "score_degradation": 22, "temperature": 42.3, "vibration": 0.6,
-             "unite": "Unité C", "responsable": "Fatima R."},
+             "rul_jours": 20, "score_degradation": 38, "temperature": 65.1, "vibration": 1.4,
+             "unite": "Ligne 1", "responsable": "Marc Lefebvre"},
+            {"id": "M-08",  "nom": "Moteur M-08",        "statut": "Nominal",
+             "rul_jours": 100, "score_degradation": 8, "temperature": 52.0, "vibration": 0.6,
+             "unite": "Ligne 2", "responsable": "Marc Lefebvre"},
         ]
+
+    # ── Aligner P-17 avec le simulateur (K0) ──────────────────────────────────
+    # Le simulateur est la source de vérité pour P-17.
+    # On écrase les valeurs statiques Notion avec les valeurs temps réel.
+    for m in all_machines:
+        if "P-17" in (m.get("id") or "") or "P-17" in (m.get("nom") or ""):
+            m["rul_jours"]        = c_rul
+            m["statut"]           = r_status
+            m["temperature"]      = c_temp
+            m["vibration"]        = c_vib
+            m["score_degradation"] = _DEG_BY_STATUS.get(r_status, 20)
+    # ──────────────────────────────────────────────────────────────────────────
 
     # Trier par score décroissant et prendre les 2 premières
     ranked = sorted(all_machines, key=score_alerte, reverse=True)
@@ -546,14 +561,21 @@ with tab4:
 
         col_a, col_mid, col_b = st.columns([2, 1, 2])
         for col, m, score in [(col_a, m_a, score_a), (col_b, m_b, score_b)]:
-            bg = "#fee2e2" if score >= 50 else "#fef3c7"
+            statut_m = m.get("statut") or "Nominal"
+            if statut_m == "Critique" or score >= 60:
+                bg, score_color, badge = "#fee2e2", "#b91c1c", "🔴 Critique"
+            elif statut_m == "Alerte" or score >= 30:
+                bg, score_color, badge = "#fef3c7", "#b45309", "🟠 Alerte"
+            else:
+                bg, score_color, badge = "#f0fdf4", "#166534", "🟢 Nominal"
             with col:
                 st.markdown(
                     f'<div style="background:{bg};border-radius:10px;padding:20px;text-align:center;">'
                     f'<div style="font-size:1.3rem;font-weight:700;">{m.get("nom","?")}</div>'
                     f'<div style="color:#64748b;">{m.get("id","")} — {m.get("unite","")}</div>'
+                    f'<div style="font-size:0.8rem;margin-top:4px;">{badge}</div>'
                     f'<hr style="margin:10px 0;">'
-                    f'<div style="font-size:2rem;font-weight:800;color:{"#b91c1c" if score>=50 else "#b45309"};">'
+                    f'<div style="font-size:2rem;font-weight:800;color:{score_color};">'
                     f'{score}<span style="font-size:1rem;">/100</span></div>'
                     f'<div style="font-size:0.82rem;color:#475569;">Score urgence</div>'
                     f'</div>',
@@ -561,10 +583,10 @@ with tab4:
                 )
                 st.markdown("")
                 st.markdown(f"**RUL :** {m.get('rul_jours','?')} j")
-                st.markdown(f"**Dégradation :** {m.get('score_degradation','?')} %")
-                st.markdown(f"**Statut :** {m.get('statut','?')}")
-                st.markdown(f"**Température :** {m.get('temperature','?')} °C")
-                st.markdown(f"**Vibration :** {m.get('vibration','?')} mm/s")
+                st.markdown(f"**Dégradation :** {m.get('score_degradation', 0)} %")
+                st.markdown(f"**Statut :** {statut_m}")
+                st.markdown(f"**Température :** {m.get('temperature') or '—'} °C")
+                st.markdown(f"**Vibration :** {m.get('vibration') or '—'} mm/s")
                 st.markdown(f"**Responsable :** {m.get('responsable','?')}")
 
         with col_mid:
