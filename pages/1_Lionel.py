@@ -136,24 +136,64 @@ with tab0:
     st.markdown("### 📈 Tendances (30 dernières mesures)")
     hist = st.session_state.history
 
+    CHART_CONFIGS = [
+        ("temp", "Température",  "°C",   "#ef4444", "rgba(239,68,68,0.12)"),
+        ("vib",  "Vibration",    "mm/s", "#f59e0b", "rgba(245,158,11,0.12)"),
+        ("pres", "Pression",     "bar",  "#8b5cf6", "rgba(139,92,246,0.12)"),
+    ]
+
     ch1, ch2, ch3 = st.columns(3)
-    for col, key, label, color, fill_color, unit in [
-        (ch1, "temp", "Température", "#ef4444", "rgba(239,68,68,0.15)",   "°C"),
-        (ch2, "vib",  "Vibration",   "#f59e0b", "rgba(245,158,11,0.15)",  "mm/s"),
-        (ch3, "rul",  "RUL",         "#3b82f6", "rgba(59,130,246,0.15)",  "j"),
-    ]:
+    for col, (key, label, unit, color, fill_color) in zip([ch1, ch2, ch3], CHART_CONFIGS):
+        vals = list(hist[key])
+        times = list(hist["time"])
+        v_min = min(vals) if vals else 0
+        v_max = max(vals) if vals else 1
+        padding = (v_max - v_min) * 0.2 or 1
+
         fig = go.Figure()
+        # Zone de remplissage
         fig.add_trace(go.Scatter(
-            x=list(hist["time"]), y=list(hist[key]),
-            mode="lines", line=dict(color=color, width=2), fill="tozeroy",
+            x=times, y=vals,
+            mode="lines",
+            line=dict(color=color, width=2.5, shape="spline", smoothing=0.8),
+            fill="tozeroy",
             fillcolor=fill_color,
+            hovertemplate=f"<b>%{{y:.2f}} {unit}</b><extra></extra>",
         ))
+        # Valeur actuelle en marqueur
+        if vals:
+            fig.add_trace(go.Scatter(
+                x=[times[-1]], y=[vals[-1]],
+                mode="markers+text",
+                marker=dict(color=color, size=9, line=dict(color="white", width=2)),
+                text=[f"<b>{vals[-1]:.1f}</b>"],
+                textposition="top center",
+                textfont=dict(color=color, size=11),
+                hoverinfo="skip",
+            ))
         fig.update_layout(
-            title=dict(text=f"{label} ({unit})", font=dict(size=13)),
-            margin=dict(l=0, r=0, t=30, b=0),
-            height=180,
-            xaxis=dict(showticklabels=False),
-            paper_bgcolor="white", plot_bgcolor="white",
+            title=dict(
+                text=f"<b>{label}</b> <span style='font-size:11px;color:#64748b;'>({unit})</span>",
+                font=dict(size=13, color="#1e293b"),
+                x=0.02,
+            ),
+            margin=dict(l=4, r=4, t=38, b=24),
+            height=220,
+            showlegend=False,
+            xaxis=dict(
+                showticklabels=False,
+                showgrid=False,
+                zeroline=False,
+            ),
+            yaxis=dict(
+                range=[max(0, v_min - padding), v_max + padding],
+                showgrid=True,
+                gridcolor="rgba(0,0,0,0.06)",
+                tickfont=dict(size=10, color="#64748b"),
+                zeroline=False,
+            ),
+            paper_bgcolor="white",
+            plot_bgcolor="white",
         )
         col.plotly_chart(fig, use_container_width=True)
 
