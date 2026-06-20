@@ -418,7 +418,28 @@ with tab2:
     else:
         anomalie = "Usure normale"
 
-    st.info(f"**Anomalie détectée :** {anomalie} — RUL : {c_rul} j — Statut : {r_status}")
+    # ── Garde : aucune procédure si RUL nominal ──────────────────────────────
+    if r_status == "Nominal":
+        st.markdown(
+            '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;'
+            'padding:32px;text-align:center;">'
+            '<div style="font-size:2.5rem;">✅</div>'
+            '<div style="font-size:1.3rem;font-weight:700;color:#166534;margin-top:8px;">'
+            'Pompe P-17 en état nominal</div>'
+            f'<div style="color:#4b5563;margin-top:6px;">RUL : <b>{c_rul} j</b> — aucune intervention requise</div>'
+            '<div style="color:#6b7280;font-size:0.85rem;margin-top:10px;">'
+            'La procédure d\'intervention s\'activera automatiquement<br>'
+            'dès que le statut passe en <b>Alerte</b> ou <b>Critique</b>.</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        st.stop()
+
+    # ── Bandeau statut selon niveau d'alerte ─────────────────────────────────
+    if r_status == "Critique":
+        st.error(f"🔴 **{anomalie} — CRITIQUE** — RUL : {c_rul} j — Intervention immédiate requise")
+    else:
+        st.warning(f"🟠 **{anomalie} — ALERTE** — RUL : {c_rul} j — Planifier intervention sous 48h")
 
     # Durée et ressources estimées selon type d'anomalie
     duree_map = {
