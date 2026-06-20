@@ -1,6 +1,6 @@
 # notion_client.py
-# Connexion live aux 6 bases Notion — ResilientFlow AI
-# Remplace les données statiques de shared_state.py
+# Connexion live aux 6 bases Notion ESCP — ResilientFlow AI
+# Schémas mis à jour pour correspondre aux vraies bases ESCP
 
 import requests
 import streamlit as st
@@ -10,15 +10,14 @@ import os
 NOTION_VERSION = "2022-06-28"
 NOTION_BASE_URL = "https://api.notion.com/v1"
 
-# IDs des 6 bases de données Notion
-
+# IDs des 6 bases de données Notion (compte ESCP)
 DB_IDS = {
-    "machines":   "6653da63-bd5a-4191-815c-576b8c7fcfbc",
-    "equipe":     "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b",
-    "pieces":     "ef896795-bd1a-4b20-a8ea-f121c9f846ff",
-    "ordres_fab": "687e40c2-a3ff-4de0-be55-20cf411f5dd6",
-    "historique": "94babab5-03bb-4c4d-9053-08d5bff301e3",
-    "hse_docs":   "3856b2ff-be3d-816f-a163-ef4f8e43499d",
+    "machines":   "6653da63-bd5a-4191-815c-576b8c7fcfbc",   # 🏭 Équipements
+    "equipe":     "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b",   # 👷 Équipe Maintenance RH
+    "pieces":     "ef896795-bd1a-4b20-a8ea-f121c9f846ff",   # 📦 Stock Composants
+    "ordres_fab": "687e40c2-a3ff-4de0-be55-20cf411f5dd6",   # 📋 Ordres de Fabrication
+    "historique": "94babab5-03bb-4c4d-9053-08d5bff301e3",   # 🔩 Plan de Maintenance
+    "hse_docs":   "3856b2ff-be3d-816f-a163-ef4f8e43499d",   # 📚 Documentation & HSE
 }
 
 
@@ -84,46 +83,69 @@ def _prop(page: dict, name: str):
     return None
 
 
-# ── 1. MACHINES ───────────────────────────────────────────────────────────────
+# ── 1. MACHINES / ÉQUIPEMENTS ────────────────────────────────────────────────
+# Base ESCP : titre = "Équipement"
+# Champs : Statut, Type, Ligne de production, Seuil Température (°C),
+#          Seuil Vibration (mm/s), Seuil Pression (bar), RUL nominal (h),
+#          Modèle, Fabricant, N° de série, Technicien référent, Notes,
+#          Heures de fonctionnement total, Date de mise en service,
+#          Documentation technique
 
 @st.cache_data(ttl=30)
 def get_machines(statut: str = None) -> list[dict]:
-    """Toutes les machines, triées par RUL croissant. Filtre optionnel par statut."""
+    """Toutes les machines, filtre optionnel par statut."""
     f = {"property": "Statut", "select": {"equals": statut}} if statut else None
-    pages = _query_db(DB_IDS["machines"], f,
-                      sorts=[{"property": "RUL (jours)", "direction": "ascending"}])
+    pages = _query_db(DB_IDS["machines"], f)
     return [_parse_machine(p) for p in pages]
 
 
 @st.cache_data(ttl=30)
 def get_machine(machine_id: str) -> dict | None:
-    """Machine par son ID métier (ex: 'P-17', 'C-03')."""
-    pages = _query_db(DB_IDS["machines"],
-                      {"property": "ID Machine", "rich_text": {"equals": machine_id}})
+    """Machine par son nom (ex: 'P-17'). Cherche dans le champ titre 'Équipement'."""
+    pages = _query_db(
+        DB_IDS["machines"],
+        {"property": "Équipement", "title": {"contains": machine_id}}
+    )
     return _parse_machine(pages[0]) if pages else None
 
 
 def _parse_machine(p: dict) -> dict:
     return {
-        "id":                    _prop(p, "ID Machine"),
-        "nom":                   _prop(p, "Nom Machine"),
-        "type":                  _prop(p, "Type"),
-        "statut":                _prop(p, "Statut"),
-        "rul_jours":             _prop(p, "RUL (jours)"),
-        "temperature":           _prop(p, "Température actuelle (°C)"),
-        "vibration":             _prop(p, "Vibration actuelle (mm/s)"),
-        "score_degradation":     _prop(p, "Score dégradation (%)"),
-        "seuil_temp":            _prop(p, "Seuil température (°C)"),
-        "seuil_vib":             _prop(p, "Seuil vibration (mm/s)"),
-        "unite":                 _prop(p, "Unité / Zone"),
-        "responsable":           _prop(p, "Responsable"),
-        "notes_ia":              _prop(p, "Notes IA"),
-        "derniere_inspection":   _prop(p, "Dernière inspection"),
-        "prochaine_maintenance": _prop(p, "Prochaine maintenance"),
+        "id":              _prop(p, "Équipement"),    # titre = nom de la machine
+        "nom":             _prop(p, "Équipement"),
+        "type":            _prop(p, "Type"),
+        "statut":          _prop(p, "Statut"),
+        "rul_nominal_h":   _prop(p, "RUL nominal (h)"),
+        # Convertir heures en jours pour compatibilité avec le reste de l'app
+        "rul_jours":       round(_prop(p, "RUL nominal (h)") / 24, 1)
+                           if _prop(p, "RUL nominal (h)") else None,
+        "seuil_temp":      _prop(p, "Seuil Température (°C)"),
+        "seuil_vib":       _prop(p, "Seuil Vibration (mm/s)"),
+        "seuil_pression":  _prop(p, "Seuil Pression (bar)"),
+        "modele":          _prop(p, "Modèle"),
+        "fabricant":       _prop(p, "Fabricant"),
+        "numero_serie":    _prop(p, "N° de série"),
+        "responsable":     _prop(p, "Technicien référent"),
+        "notes":           _prop(p, "Notes"),
+        "heures_total":    _prop(p, "Heures de fonctionnement total"),
+        "unite":           _prop(p, "Ligne de production"),
+        "date_mise_service": _prop(p, "Date de mise en service"),
+        "doc_technique":   _prop(p, "Documentation technique"),
+        # Champs calculés / simulés (pas dans Notion ESCP — valeurs nulles par défaut)
+        "temperature":     None,
+        "vibration":       None,
+        "score_degradation": None,
+        "notes_ia":        None,
+        "derniere_inspection": None,
+        "prochaine_maintenance": None,
     }
 
 
 # ── 2. ÉQUIPE MAINTENANCE ─────────────────────────────────────────────────────
+# Base ESCP : titre = "Nom Technicien"
+# Champs : Prénom, Rôle, Disponibilité, Habilitations, Zone assignée,
+#          Spécialité, Heures restantes, Charge horaire (h/sem),
+#          Téléphone, Certifications, Notes, Date prise de poste
 
 @st.cache_data(ttl=60)
 def get_equipe(disponibilite: str = None) -> list[dict]:
@@ -131,127 +153,169 @@ def get_equipe(disponibilite: str = None) -> list[dict]:
     f = {"property": "Disponibilité", "select": {"equals": disponibilite}} if disponibilite else None
     pages = _query_db(DB_IDS["equipe"], f)
     return [{
-        "nom":             _prop(p, "Nom Technicien"),
-        "prenom":          _prop(p, "Prénom"),
-        "role":            _prop(p, "Rôle"),
-        "persona":         _prop(p, "Persona"),
-        "specialite":      _prop(p, "Spécialité"),
-        "habilitations":   _prop(p, "Habilitations"),   # list
-        "disponibilite":   _prop(p, "Disponibilité"),
-        "charge_horaire":  _prop(p, "Charge horaire (h/sem)"),
+        "nom":              _prop(p, "Nom Technicien"),
+        "prenom":           _prop(p, "Prénom"),
+        "role":             _prop(p, "Rôle"),
+        "specialite":       _prop(p, "Spécialité"),
+        "habilitations":    _prop(p, "Habilitations"),       # list
+        "disponibilite":    _prop(p, "Disponibilité"),
+        "charge_horaire":   _prop(p, "Charge horaire (h/sem)"),
         "heures_restantes": _prop(p, "Heures restantes"),
-        "zone":            _prop(p, "Zone assignée"),
-        "certifications":  _prop(p, "Certifications"),
-        "telephone":       _prop(p, "Téléphone"),
-        "notes":           _prop(p, "Notes"),
+        "zone":             _prop(p, "Zone assignée"),
+        "certifications":   _prop(p, "Certifications"),
+        "telephone":        _prop(p, "Téléphone"),
+        "notes":            _prop(p, "Notes"),
+        "date_poste":       _prop(p, "Date prise de poste"),
     } for p in pages]
 
 
-# ── 3. PIÈCES DÉTACHÉES ───────────────────────────────────────────────────────
+# ── 3. PIÈCES DÉTACHÉES / STOCK COMPOSANTS ────────────────────────────────────
+# Base ESCP : titre = "Composant"
+# Champs : Statut stock, Catégorie, Critique, Stock actuel,
+#          Stock minimum (seuil alerte), Stock maximum, Prix unitaire (€),
+#          Délai réappro (jours), Fournisseur principal, Réf. fabricant,
+#          Emplacement magasin, Équipements compatibles, Notes, Unité,
+#          Date dernière commande
 
 @st.cache_data(ttl=60)
 def get_pieces(machine_id: str = None, statut_stock: str = None) -> list[dict]:
     """Pièces détachées. Filtres optionnels par machine et/ou statut stock."""
     filters = []
     if machine_id:
-        filters.append({"property": "Machine concernée", "rich_text": {"contains": machine_id}})
+        # Le champ est "Équipements compatibles" (texte libre)
+        filters.append({"property": "Équipements compatibles",
+                         "rich_text": {"contains": machine_id}})
     if statut_stock:
         filters.append({"property": "Statut stock", "select": {"equals": statut_stock}})
 
     f = None if not filters else (filters[0] if len(filters) == 1 else {"and": filters})
     pages = _query_db(DB_IDS["pieces"], f)
     return [{
-        "designation":     _prop(p, "Désignation pièce"),
-        "reference":       _prop(p, "Référence"),
+        "designation":     _prop(p, "Composant"),            # titre
+        "reference":       _prop(p, "Réf. fabricant"),
         "categorie":       _prop(p, "Catégorie"),
-        "machine":         _prop(p, "Machine concernée"),
+        "machine":         _prop(p, "Équipements compatibles"),
         "emplacement":     _prop(p, "Emplacement magasin"),
         "stock_actuel":    _prop(p, "Stock actuel"),
-        "stock_minimum":   _prop(p, "Stock minimum"),
+        "stock_minimum":   _prop(p, "Stock minimum (seuil alerte)"),
+        "stock_maximum":   _prop(p, "Stock maximum"),
         "statut_stock":    _prop(p, "Statut stock"),
+        "critique":        _prop(p, "Critique"),
         "prix_unitaire":   _prop(p, "Prix unitaire (€)"),
-        "fournisseur":     _prop(p, "Fournisseur"),
-        "delai_livraison": _prop(p, "Délai livraison (j)"),
+        "fournisseur":     _prop(p, "Fournisseur principal"),
+        "delai_livraison": _prop(p, "Délai réappro (jours)"),
+        "unite":           _prop(p, "Unité"),
         "notes":           _prop(p, "Notes"),
+        "date_commande":   _prop(p, "Date dernière commande"),
     } for p in pages]
 
 
 # ── 4. ORDRES DE FABRICATION ──────────────────────────────────────────────────
+# Base ESCP : titre = "Ordre de Fabrication"
+# Champs : Statut, Ligne de production, Équipement concerné, Produit fabriqué,
+#          Responsable OF, Notes, Quantité cible, Quantité réalisée,
+#          Coût arrêt horaire (€), Date début, Date fin prévue,
+#          Ligne de secours disponible
 
 @st.cache_data(ttl=30)
 def get_ordres_fabrication(statut: str = None, machine_id: str = None) -> list[dict]:
     """Ordres de fabrication. Filtres optionnels par statut et machine."""
     filters = []
     if statut:
-        filters.append({"property": "Statut OF", "select": {"equals": statut}})
+        filters.append({"property": "Statut", "select": {"equals": statut}})
     if machine_id:
-        filters.append({"property": "Machine impactée", "rich_text": {"contains": machine_id}})
+        filters.append({"property": "Équipement concerné",
+                         "rich_text": {"contains": machine_id}})
 
     f = None if not filters else (filters[0] if len(filters) == 1 else {"and": filters})
-    pages = _query_db(DB_IDS["ordres_fab"], f,
-                      sorts=[{"property": "Priorité", "direction": "ascending"}])
+    pages = _query_db(DB_IDS["ordres_fab"], f)
     return [{
-        "reference":    _prop(p, "Référence OF"),
-        "produit":      _prop(p, "Produit"),
-        "statut":       _prop(p, "Statut OF"),
-        "priorite":     _prop(p, "Priorité"),
-        "ligne":        _prop(p, "Ligne de production"),
-        "machine":      _prop(p, "Machine impactée"),
-        "date_debut":   _prop(p, "Date début"),
-        "date_fin":     _prop(p, "Date fin prévue"),
-        "qte_prevue":   _prop(p, "Quantité prévue"),
-        "qte_realisee": _prop(p, "Quantité réalisée"),
-        "cout_arret":   _prop(p, "Coût arrêt (€)"),
-        "duree_arret":  _prop(p, "Durée arrêt (h)"),
-        "impact_rul":   _prop(p, "Impact RUL"),
-        "responsable":  _prop(p, "Responsable production"),
+        "reference":        _prop(p, "Ordre de Fabrication"),  # titre
+        "produit":          _prop(p, "Produit fabriqué"),
+        "statut":           _prop(p, "Statut"),
+        "ligne":            _prop(p, "Ligne de production"),
+        "machine":          _prop(p, "Équipement concerné"),
+        "responsable":      _prop(p, "Responsable OF"),
+        "date_debut":       _prop(p, "Date début"),
+        "date_fin":         _prop(p, "Date fin prévue"),
+        "qte_prevue":       _prop(p, "Quantité cible"),
+        "qte_realisee":     _prop(p, "Quantité réalisée"),
+        "cout_arret_h":     _prop(p, "Coût arrêt horaire (€)"),
+        "secours_dispo":    _prop(p, "Ligne de secours disponible"),
+        "notes":            _prop(p, "Notes"),
+        # Champs absents dans ESCP — valeurs nulles pour compatibilité
+        "priorite":         None,
+        "duree_arret":      None,
+        "impact_rul":       None,
+        "cout_arret":       _prop(p, "Coût arrêt horaire (€)"),  # alias
     } for p in pages]
 
 
 # ── 5. HISTORIQUE & PLAN DE MAINTENANCE ───────────────────────────────────────
+# Base ESCP : titre = "Intervention"
+# Champs : Statut, Type d'intervention, Équipement, Technicien assigné,
+#          Composants à remplacer, Description, Résultat, Priorité,
+#          Durée estimée (h), Durée réelle (h), Coût estimé (€),
+#          Date planifiée, Date réalisée, Habilitation requise,
+#          Procédure LOTO requise
 
 @st.cache_data(ttl=60)
 def get_historique(machine_id: str = None, statut: str = None, limit: int = 20) -> list[dict]:
-    """Historique des interventions, triées par date décroissante."""
+    """Historique des interventions, triées par date planifiée décroissante."""
     filters = []
     if machine_id:
-        filters.append({"property": "Machine", "rich_text": {"contains": machine_id}})
+        filters.append({"property": "Équipement",
+                         "rich_text": {"contains": machine_id}})
     if statut:
         filters.append({"property": "Statut", "select": {"equals": statut}})
 
     f = None if not filters else (filters[0] if len(filters) == 1 else {"and": filters})
     pages = _query_db(DB_IDS["historique"], f,
-                      sorts=[{"property": "Date intervention", "direction": "descending"}])
+                      sorts=[{"property": "Date planifiée", "direction": "descending"}])
     return [{
-        "titre":             _prop(p, "Titre intervention"),
-        "machine":           _prop(p, "Machine"),
-        "type":              _prop(p, "Type"),
+        "titre":             _prop(p, "Intervention"),        # titre
+        "machine":           _prop(p, "Équipement"),
+        "type":              _prop(p, "Type d'intervention"),
         "statut":            _prop(p, "Statut"),
+        "priorite":          _prop(p, "Priorité"),
         "technicien":        _prop(p, "Technicien assigné"),
-        "date":              _prop(p, "Date intervention"),
-        "prochaine_echeance": _prop(p, "Prochaine échéance"),
+        "date":              _prop(p, "Date planifiée"),
+        "date_realisee":     _prop(p, "Date réalisée"),
         "duree_estimee":     _prop(p, "Durée estimée (h)"),
         "duree_reelle":      _prop(p, "Durée réelle (h)"),
-        "cout_intervention": _prop(p, "Coût intervention (€)"),
-        "cout_arret_prod":   _prop(p, "Coût arrêt production (€)"),
-        "rul_avant":         _prop(p, "RUL avant intervention (j)"),
-        "rul_apres":         _prop(p, "RUL après intervention (j)"),
-        "cause_racine":      _prop(p, "Cause racine"),
-        "actions":           _prop(p, "Actions réalisées"),
-        "pieces":            _prop(p, "Pièces remplacées"),
-        "observations":      _prop(p, "Observations"),
-        "alerte_ia":         _prop(p, "Lien alerte IA"),
+        "cout_estime":       _prop(p, "Coût estimé (€)"),
+        "description":       _prop(p, "Description"),
+        "resultat":          _prop(p, "Résultat"),
+        "composants":        _prop(p, "Composants à remplacer"),
+        "habilitations":     _prop(p, "Habilitation requise"),  # list
+        "loto_requis":       _prop(p, "Procédure LOTO requise"),
+        # Aliases pour compatibilité avec le code existant des agents
+        "actions":           _prop(p, "Description"),
+        "pieces":            _prop(p, "Composants à remplacer"),
+        "observations":      _prop(p, "Résultat"),
+        "cout_intervention": _prop(p, "Coût estimé (€)"),
+        "prochaine_echeance": None,
+        "cout_arret_prod":   None,
+        "rul_avant":         None,
+        "rul_apres":         None,
+        "cause_racine":      None,
+        "alerte_ia":         None,
     } for p in pages[:limit]]
 
 
 # ── 6. DOCUMENTATION & HSE ────────────────────────────────────────────────────
+# Base ESCP : titre = "Titre document"
+# Champs : Type, Statut, Machine concernée, EPI obligatoires, Niveau risque,
+#          Persona destinataire, Contenu résumé, Version, Auteur,
+#          Lien document, Date validation, Date révision
 
 @st.cache_data(ttl=120)
 def get_docs_hse(machine_id: str = None, type_doc: str = None, persona: str = None) -> list[dict]:
     """Documents HSE. Filtres optionnels par machine, type et persona destinataire."""
     filters = []
     if machine_id:
-        filters.append({"property": "Machine concernée", "rich_text": {"contains": machine_id}})
+        filters.append({"property": "Machine concernée",
+                         "rich_text": {"contains": machine_id}})
     if type_doc:
         filters.append({"property": "Type", "select": {"equals": type_doc}})
 
@@ -285,7 +349,6 @@ def get_docs_hse(machine_id: str = None, type_doc: str = None, persona: str = No
 def get_contexte_machine(machine_id: str) -> dict:
     """
     Retourne le contexte complet d'une machine pour alimenter les 4 agents.
-    Remplace dynamiquement le CONTEXTE_USINE statique de shared_state.py.
 
     Usage dans un agent :
         from notion_client import get_contexte_machine
@@ -311,15 +374,19 @@ def get_metriques_roi() -> dict:
     Calcule les KPIs ROI depuis l'historique Notion.
     Utilisé par l'Agent Antoine pour le dashboard exécutif.
     """
-    interventions  = get_historique(limit=100)
-    terminees      = [i for i in interventions if i["statut"] == "Terminée"]
-    prescriptives  = [i for i in terminees if i["type"] == "Maintenance prescriptive"]
+    interventions = get_historique(limit=100)
+    # Statut "Réalisée" dans ESCP (était "Terminée" dans l'ancienne base)
+    terminees     = [i for i in interventions if i["statut"] == "Réalisée"]
+    # Type "Prédictive" dans ESCP (plus proche de prescriptive)
+    prescriptives = [i for i in terminees
+                     if i["type"] in ("Prédictive", "Préventive conditionnelle")]
 
     cout_interventions = sum(i.get("cout_intervention") or 0 for i in terminees)
     couts_evites       = sum(i.get("cout_arret_prod") or 0 for i in prescriptives)
     roi = round(couts_evites / cout_interventions, 1) if cout_interventions > 0 else 0
 
-    machines_alerte = get_machines(statut="Alerte critique")
+    # Statuts d'alerte dans ESCP : "Alerte" et "Critique"
+    machines_alerte = get_machines(statut="Alerte") + get_machines(statut="Critique")
 
     return {
         "nb_interventions":   len(terminees),
@@ -336,54 +403,56 @@ def get_metriques_roi() -> dict:
 
 def create_intervention(data: dict) -> dict:
     """
-    Crée un enregistrement dans l'Historique Maintenance Notion.
+    Crée un enregistrement dans le Plan de Maintenance Notion (base ESCP).
 
     Champs attendus dans `data` (tous optionnels sauf titre) :
         titre, machine, type, statut, technicien,
-        date (ISO 8601), duree_reelle, cout, rul_avant,
-        cause_racine, actions, pieces, observations
+        date (ISO 8601), duree_reelle, cout, description,
+        composants, resultat
     """
     url = f"{NOTION_BASE_URL}/pages"
     body = {
         "parent": {"database_id": DB_IDS["historique"]},
         "properties": {
-            "Titre intervention": {
+            "Intervention": {
                 "title": [{"text": {"content": data.get("titre", "Intervention")}}]
             },
-            "Machine": {
+            "Équipement": {
                 "rich_text": [{"text": {"content": data.get("machine", "")}}]
             },
-            "Type": {
-                "select": {"name": data.get("type", "Maintenance prescriptive")}
+            "Type d'intervention": {
+                "select": {"name": data.get("type", "Prédictive")}
             },
             "Statut": {
-                "select": {"name": data.get("statut", "Terminée")}
+                "select": {"name": data.get("statut", "Réalisée")}
             },
             "Technicien assigné": {
                 "rich_text": [{"text": {"content": data.get("technicien", "")}}]
             },
-            "Actions réalisées": {
-                "rich_text": [{"text": {"content": data.get("actions", "")}}]
+            "Description": {
+                "rich_text": [{"text": {"content": data.get("description", data.get("actions", ""))}}]
             },
-            "Pièces remplacées": {
-                "rich_text": [{"text": {"content": data.get("pieces", "")}}]
+            "Composants à remplacer": {
+                "rich_text": [{"text": {"content": data.get("composants", data.get("pieces", ""))}}]
             },
-            "Observations": {
-                "rich_text": [{"text": {"content": data.get("observations", "")}}]
+            "Résultat": {
+                "rich_text": [{"text": {"content": data.get("resultat", data.get("observations", ""))}}]
             },
         },
     }
 
     if data.get("date"):
-        body["properties"]["Date intervention"] = {"date": {"start": data["date"]}}
+        body["properties"]["Date planifiée"] = {"date": {"start": data["date"]}}
+    if data.get("date_realisee"):
+        body["properties"]["Date réalisée"] = {"date": {"start": data["date_realisee"]}}
     if data.get("duree_reelle") is not None:
         body["properties"]["Durée réelle (h)"] = {"number": float(data["duree_reelle"])}
     if data.get("cout") is not None:
-        body["properties"]["Coût intervention (€)"] = {"number": float(data["cout"])}
-    if data.get("rul_avant") is not None:
-        body["properties"]["RUL avant intervention (j)"] = {"number": float(data["rul_avant"])}
-    if data.get("cause_racine"):
-        body["properties"]["Cause racine"] = {"select": {"name": data["cause_racine"]}}
+        body["properties"]["Coût estimé (€)"] = {"number": float(data["cout"])}
+    if data.get("priorite"):
+        body["properties"]["Priorité"] = {"select": {"name": data["priorite"]}}
+    if data.get("loto_requis"):
+        body["properties"]["Procédure LOTO requise"] = {"select": {"name": data["loto_requis"]}}
 
     resp = requests.post(url, headers=_headers(), json=body, timeout=10)
     resp.raise_for_status()
