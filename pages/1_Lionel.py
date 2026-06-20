@@ -66,14 +66,24 @@ c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
 STATUS_COLOR = {"Nominal": "#166534", "Alerte": "#b45309", "Critique": "#b91c1c"}
 STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"}
 
-# ── TABS ──────────────────────────────────────────────────────────────────────
-tab0, tab1, tab2, tab3, tab4 = st.tabs([
-    "📡 K0 — Surveillance",
-    "📋 K1 — Briefing",
-    "📘 K2 — Procédure",
-    "📝 K3 — Post-intervention",
-    "⚖️ K4 — Arbitrage",
-])
+# ── TABS — K2 visible uniquement si intervention requise ─────────────────────
+_show_k2 = r_status in ("Alerte", "Critique")
+_tab_labels = ["📡 K0 — Surveillance", "📋 K1 — Briefing"]
+if _show_k2:
+    _tab_labels.append("📘 K2 — Procédure 🔔")
+_tab_labels += ["📝 K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
+
+_tabs = st.tabs(_tab_labels)
+tab0 = _tabs[0]
+tab1 = _tabs[1]
+if _show_k2:
+    tab2 = _tabs[2]
+    tab3 = _tabs[3]
+    tab4 = _tabs[4]
+else:
+    tab2 = None
+    tab3 = _tabs[2]
+    tab4 = _tabs[3]
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TAB 0 — K0 SURVEILLANCE
@@ -403,9 +413,10 @@ with tab1:
                 )
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 2 — K2 PROCÉDURE
+# TAB 2 — K2 PROCÉDURE (visible uniquement si Alerte ou Critique)
 # ════════════════════════════════════════════════════════════════════════════════
-with tab2:
+if tab2 is not None:
+  with tab2:
     st.markdown("## 📘 Procédure d'intervention — Pompe P-17")
 
     # Détection type d'anomalie depuis capteurs
@@ -417,23 +428,6 @@ with tab2:
         anomalie = "Pression insuffisante"
     else:
         anomalie = "Usure normale"
-
-    # ── Garde : aucune procédure si RUL nominal ──────────────────────────────
-    if r_status == "Nominal":
-        st.markdown(
-            '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;'
-            'padding:32px;text-align:center;">'
-            '<div style="font-size:2.5rem;">✅</div>'
-            '<div style="font-size:1.3rem;font-weight:700;color:#166534;margin-top:8px;">'
-            'Pompe P-17 en état nominal</div>'
-            f'<div style="color:#4b5563;margin-top:6px;">RUL : <b>{c_rul} j</b> — aucune intervention requise</div>'
-            '<div style="color:#6b7280;font-size:0.85rem;margin-top:10px;">'
-            'La procédure d\'intervention s\'activera automatiquement<br>'
-            'dès que le statut passe en <b>Alerte</b> ou <b>Critique</b>.</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        st.stop()
 
     # ── Bandeau statut selon niveau d'alerte ─────────────────────────────────
     if r_status == "Critique":
