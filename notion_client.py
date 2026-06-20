@@ -11,13 +11,14 @@ NOTION_VERSION = "2022-06-28"
 NOTION_BASE_URL = "https://api.notion.com/v1"
 
 # IDs des 6 bases de données Notion
+
 DB_IDS = {
-    "machines":   "5279cb2a42b54b42936e22313521f825",
-    "equipe":     "0a82b4f53a26491c81e64b0cb8bb058c",
-    "pieces":     "c22138baa8ca4806b19403108735bc68",
-    "ordres_fab": "d7ee45dab07943c1bda09a6b47089202",
-    "historique": "6f53558bfbee455891efa53b6536d892",
-    "hse_docs":   "b6ab3a9bd41d4967add92f27d1cd2d5c",
+    "machines":   "6653da63-bd5a-4191-815c-576b8c7fcfbc",
+    "equipe":     "3856b2ff-be3d-8151-8b3f-ee79dee0bc2b",
+    "pieces":     "ef896795-bd1a-4b20-a8ea-f121c9f846ff",
+    "ordres_fab": "687e40c2-a3ff-4de0-be55-20cf411f5dd6",
+    "historique": "94babab5-03bb-4c4d-9053-08d5bff301e3",
+    "hse_docs":   "3856b2ff-be3d-816f-a163-ef4f8e43499d",
 }
 
 
