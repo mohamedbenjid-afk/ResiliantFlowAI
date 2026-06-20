@@ -474,12 +474,12 @@ with tab3:
             with col_f2:
                 f_type = st.selectbox(
                     "Type d'intervention",
-                    ["Maintenance prescriptive", "Panne corrective",
-                     "Maintenance préventive", "Inspection", "Remplacement planifié"],
+                    ["Prédictive", "Préventive", "Préventive conditionnelle",
+                     "Corrective", "Inspection"],
                 )
                 f_statut = st.selectbox(
                     "Statut",
-                    ["Terminée", "En cours", "En attente pièces", "Annulée"],
+                    ["Réalisée", "En cours", "Planifiée", "Annulée"],
                 )
                 f_duree = st.number_input("Durée réelle (h)", min_value=0.0, step=0.5, value=2.0)
 

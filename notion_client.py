@@ -440,6 +440,19 @@ def create_intervention(data: dict) -> dict:
         composants, resultat
     """
     url = f"{NOTION_BASE_URL}/pages"
+
+    # Injecte cause_racine dans Description (pas de champ dédié en ESCP)
+    desc_parts = [data.get("description") or data.get("actions") or ""]
+    if data.get("cause_racine"):
+        desc_parts.append(f"Cause racine : {data['cause_racine']}")
+    description_text = " | ".join(p for p in desc_parts if p)
+
+    # Injecte rul_avant dans Résultat (pas de champ dédié en ESCP)
+    res_parts = [data.get("resultat") or data.get("observations") or ""]
+    if data.get("rul_avant") is not None:
+        res_parts.append(f"RUL avant intervention : {data['rul_avant']} j")
+    resultat_text = " | ".join(p for p in res_parts if p)
+
     body = {
         "parent": {"database_id": DB_IDS["historique"]},
         "properties": {
@@ -459,13 +472,13 @@ def create_intervention(data: dict) -> dict:
                 "rich_text": [{"text": {"content": data.get("technicien", "")}}]
             },
             "Description": {
-                "rich_text": [{"text": {"content": data.get("description", data.get("actions", ""))}}]
+                "rich_text": [{"text": {"content": description_text}}]
             },
             "Composants à remplacer": {
                 "rich_text": [{"text": {"content": data.get("composants", data.get("pieces", ""))}}]
             },
             "Résultat": {
-                "rich_text": [{"text": {"content": data.get("resultat", data.get("observations", ""))}}]
+                "rich_text": [{"text": {"content": resultat_text}}]
             },
         },
     }
