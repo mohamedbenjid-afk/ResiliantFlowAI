@@ -2,6 +2,7 @@
 # Connexion live aux 6 bases Notion ESCP — ResilientFlow AI
 # Schémas mis à jour pour correspondre aux vraies bases ESCP
 
+import re
 import requests
 import streamlit as st
 import os
@@ -91,28 +92,56 @@ def _prop(page: dict, name: str):
 #          Heures de fonctionnement total, Date de mise en service,
 #          Documentation technique
 
+def _extract_code(nom: str) -> str:
+    """Extrait le code machine (ex: 'P-17') depuis un titre comme 'Pompe P-17'."""
+    if not nom:
+        return nom
+    m = re.search(r'\b([A-Z]+-\d+)\b', nom)
+    return m.group(1) if m else nom
+
+
 @st.cache_data(ttl=30)
 def get_machines(statut: str = None) -> list[dict]:
-    """Toutes les machines, filtre optionnel par statut."""
+    """Toutes les machines, filtre optionnel par statut. Déduplique par code machine."""
     f = {"property": "Statut", "select": {"equals": statut}} if statut else None
     pages = _query_db(DB_IDS["machines"], f)
-    return [_parse_machine(p) for p in pages]
+    raw = [_parse_machine(p) for p in pages]
+    # Déduplication : garder une seule entrée par code machine (ex: P-17)
+    # Priorité à l'entrée avec le RUL le plus bas (la plus critique)
+    seen: dict[str, dict] = {}
+    for m in raw:
+        code = _extract_code(m["nom"])
+        m["id"] = code  # normalise l'ID
+        if code not in seen:
+            seen[code] = m
+        else:
+            # Garder l'entrée avec le RUL le plus bas (plus critique)
+            rul_existing = seen[code].get("rul_jours") or 9999
+            rul_new = m.get("rul_jours") or 9999
+            if rul_new < rul_existing:
+                seen[code] = m
+    return list(seen.values())
 
 
 @st.cache_data(ttl=30)
 def get_machine(machine_id: str) -> dict | None:
-    """Machine par son nom (ex: 'P-17'). Cherche dans le champ titre 'Équipement'."""
+    """Machine par son code (ex: 'P-17'). Cherche dans le champ titre 'Équipement'."""
     pages = _query_db(
         DB_IDS["machines"],
         {"property": "Équipement", "title": {"contains": machine_id}}
     )
-    return _parse_machine(pages[0]) if pages else None
+    if not pages:
+        return None
+    m = _parse_machine(pages[0])
+    m["id"] = _extract_code(m["nom"])
+    return m
 
 
 def _parse_machine(p: dict) -> dict:
+    nom = _prop(p, "Équipement") or ""
     return {
-        "id":              _prop(p, "Équipement"),    # titre = nom de la machine
-        "nom":             _prop(p, "Équipement"),
+        "id":              _extract_code(nom),
+        "nom":             nom,
         "type":            _prop(p, "Type"),
         "statut":          _prop(p, "Statut"),
         "rul_nominal_h":   _prop(p, "RUL nominal (h)"),

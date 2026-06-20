@@ -169,17 +169,28 @@ with tab1:
         machines = nc.get_machines()
         if machines:
             for m in machines:
-                rul = m.get("rul_jours") or 0
-                statut = m.get("statut") or "Inconnu"
-                if statut in ("Alerte critique", "En maintenance") or rul < 30:
-                    bg = "#fee2e2" if statut == "Alerte critique" else "#fef3c7"
-                    border = "#ef4444" if statut == "Alerte critique" else "#f59e0b"
+                nom   = m.get("nom", "?")
+                mid   = m.get("id", "")
+                # Pour P-17 : utilise le RUL et statut du simulateur (K0) pour cohérence
+                if "P-17" in mid or "P-17" in nom:
+                    rul    = c_rul
+                    statut = r_status
                 else:
-                    bg, border = "#f0fdf4", "#86efac"
+                    rul    = m.get("rul_jours") or 0
+                    statut = m.get("statut") or "Inconnu"
+                # Couleurs selon statuts ESCP réels
+                if statut == "Critique" or rul <= 2:
+                    bg, border, icon = "#fee2e2", "#ef4444", "🔴"
+                elif statut == "Alerte" or rul <= 20:
+                    bg, border, icon = "#fef3c7", "#f59e0b", "🟠"
+                elif statut == "Hors service":
+                    bg, border, icon = "#f3f4f6", "#6b7280", "⚫"
+                else:
+                    bg, border, icon = "#f0fdf4", "#86efac", "🟢"
                 st.markdown(
                     f'<div style="background:{bg};border-left:4px solid {border};'
                     f'border-radius:6px;padding:12px;margin-bottom:8px;">'
-                    f'<b>{m.get("nom","?")}</b> ({m.get("id","")}) — '
+                    f'{icon} <b>{nom}</b> ({mid}) — '
                     f'RUL : <b>{rul} j</b> &nbsp;|&nbsp; Statut : <b>{statut}</b>'
                     f'</div>',
                     unsafe_allow_html=True,
