@@ -6,6 +6,20 @@
 
 ---
 
+## 🚀 DÉMARRAGE RAPIDE PAR MEMBRE — Fichiers de briefing Claude
+
+Chaque membre dispose d'un fichier de briefing **à coller en début de session Claude** pour travailler sur son agent. Ces fichiers contiennent : les IDs Notion ESCP corrects, la table de correspondance des champs, le backlog US, et les instructions de réécriture.
+
+| Membre | Persona | Fichier à ouvrir |
+|---|---|---|
+| **Sihem** | Sophie — Manager Maintenance | `BRIEFING_Sophie.md` |
+| **Philippe** | Antoine — Directeur Technique | `BRIEFING_Antoine.md` |
+| **Murielle** | Leila — Responsable HSE | `BRIEFING_Leila.md` |
+
+> ⚠️ **Priorité absolue commune :** Les agents `agent_sophie.py`, `agent_antoine.py` et `agent_leila.py` utilisent tous des **IDs Notion incorrects** (ancienne base). Les briefings donnent les IDs ESCP corrects. Corriger les IDs en premier — aucun appel Notion ne fonctionne sinon.
+
+---
+
 ## 1. Présentation du projet
 
 **ResilientFlow AI** est un démonstrateur de maintenance prescriptive Industrie 4.0,
@@ -203,7 +217,77 @@ if st.session_state.running:
 
 ---
 
-## 9. Règles de contribution
+## 9. Backlog produit — User Stories par persona
+
+> Utilise ce backlog pour comprendre ce que chaque membre doit implémenter.
+> Les stories `⛔ Hors scope v1` sont reportées — ne pas les implémenter.
+
+### Légende versions
+- `v0` = Quick Win Sprint 2 — données figées OK, testable rapidement
+- `v1` = Enrichissement Sprint 3 — appels Notion réels, agent branché
+- `v2` = Finalisation Sprint 4 — intégration complète, démo jury
+
+---
+
+### ⚙️ Commun (Mohamed)
+
+| ID | Sprint | Version | User Story | Critères de succès |
+|----|--------|---------|------------|-------------------|
+| US-00 | Sprint 0 | — | Configurer l'environnement partagé (Git, simulateur IoT, scénarios RUL, dépendances) | Dépôt Git. Simulateur configuré. requirements.txt versionné. |
+| US-01a | Sprint 1 | v0 | Construire un simulateur IoT générant température, vibration, pression et RUL calculé par règles métier sur P-17 | Simulateur fonctionnel. 3 scénarios (nominal, dégradation, critique). |
+| US-01b | Sprint 3 | v1 | Enrichir les scénarios de simulation (dégradation progressive, pannes soudaines) et câbler le seuil de déclenchement | 5+ scénarios. Seuil 48h classe A / 24h classe B. |
+| US-02 | Sprint 1 | v0 | Assembler le contexte simulé (OF actif, équipe dispo, stock pièces) sous forme JSON statique | Fichier JSON documenté. Utilisable par les 4 membres. |
+| US-03 | Sprint 3 | v1 | Implémenter le moteur prescriptif : 3 scénarios précalculés avec RUL projeté | 3 scénarios. Scénario optimal sélectionné automatiquement. Résultat < 1 sec. |
+| US-D1 | Sprint 4 | v2 | Dérouler le scénario P-17 complet bout en bout sans interruption | Scénario < 5 min. 3 runs réussis. Dataset figé. Backup vidéo. |
+
+---
+
+### 🔧 Lionel — Technicien Terrain (Mohamed)
+
+| ID | Sprint | Version | User Story | Critères de succès |
+|----|--------|---------|------------|-------------------|
+| US-K0 | Sprint 2 | v0 🏆 | Afficher en 1 écran : RUL de P-17, statut (OK/Alerte/Critique) et prescription recommandée | Écran unique. RUL affiché. Statut coloré. Prescription affichée. Données figées OK. |
+| US-K1 | Sprint 3 | v1 | Recevoir un briefing de poste avec priorités du jour et action recommandée par alerte | Briefing < 30 sec. Alertes classées par urgence. 1 prescription par alerte. |
+| US-K2 | Sprint 3 | v1 | Être guidé étape par étape lors de l'intervention P-17 (D-04, JM-220 B-12, vérifier débit 45 m³/h) | Séquence P-17 affichée. Étapes validables. Durée estimée 35 min. Consignes sécurité incluses. |
+| US-K3 | Sprint 3 | v1 | Valider une intervention via formulaire 5 questions en 3 minutes | Formulaire ≤ 5 questions. Historique mis à jour. Notification Sophie générée. |
+| US-K4 | Sprint 4 | v2 | Arbitrer entre 2 alertes simultanées en 30 secondes | Classement affiché avec justification RUL + criticité. |
+
+---
+
+### 📋 Sophie — Manager Maintenance (Sihem)
+
+| ID | Sprint | Version | User Story | Critères de succès |
+|----|--------|---------|------------|-------------------|
+| US-S0 | Sprint 2 | v0 🏆 | Voir en 1 écran les alertes actives classées par urgence réelle avec le temps restant | Dashboard < 5 sec. Alertes avec criticité et temps restant. 5 alertes classées correctement. Données figées OK. |
+| US-S1 | Sprint 3 | v1 | Simuler "que se passe-t-il si je reporte C-03 à jeudi ?" → 73 % risque, 47 000 EUR impact, recommandation | Simulation < 2 min. RUL projeté + risque % + impact EUR. Testé sur scénario C-03. |
+| US-S2 | Sprint 3 | v1 | Affecter le bon technicien disponible en 1 clic avec vérification d'habilitation | Liste techniciens avec heures restantes. Alerte si habilitation manquante. Affectation en 1 clic. |
+| US-S3 | Sprint 4 | v2 | Générer le rapport hebdomadaire de performance en 10 minutes | Rapport < 1 min. Taux dispo, arrêts évités, KPIs. Export PDF. |
+
+---
+
+### 📊 Antoine — Directeur Technique (Philippe)
+
+| ID | Sprint | Version | User Story | Critères de succès |
+|----|--------|---------|------------|-------------------|
+| US-A0 | Sprint 2 | v0 🏆 | Afficher en 1 écran les 5 KPIs clés : disponibilité, arrêts évités, ROI (7,6x), coûts évités (312 000 EUR), risques à 30j | Dashboard < 3 sec. 5 KPIs présents. Données figées OK. |
+| US-A1 | Sprint 3 | v1 | Recevoir une alerte immédiate dès qu'un risque majeur est détecté (RUL < seuil classe A) | Alerte < 5 min. Équipement, RUL, impact estimé, recommandation. |
+| US-A2 | Sprint 3 | v1 | Simuler l'impact financier remplacement vs pannes sur 24 mois | Simulation < 2 min. Coût remplacement vs coût pannes projeté. ROI estimé. |
+| US-A3 | Sprint 4 | v2 | Générer le rapport CODIR trimestriel | Rapport < 2 min. Export PDF/PPT. |
+
+---
+
+### 🛡️ Leila — Responsable HSE (Murielle)
+
+| ID | Sprint | Version | User Story | Critères de succès |
+|----|--------|---------|------------|-------------------|
+| US-L0 | Sprint 2 | v0 🏆 | Recevoir une alerte HSE avec les EPI requis intégrés dans le bon de travail avant intervention | Alerte HSE < 1 min. EPI requis affichés selon type de défaillance. Fiche sécurité jointe. |
+| US-L1 | Sprint 3 | v1 | Consulter un rapport de conformité hebdomadaire des interventions | Rapport < 1 min. Taux conformité %. Écarts détectés. Export PDF. |
+| US-L2 | Sprint 3 | v1 | Générer le dossier audit ISO 45001 sur les 12 derniers mois | Dossier < 5 min. Format ISO 45001. Export PDF. |
+| US-L3 | Sprint 4 | v2 | Reconstituer la chronologie d'une intervention post-incident | Timeline minute par minute. < 5 min. Horodatée. |
+
+---
+
+## 10. Règles de contribution
 
 - Travailler sur la branche `develop` uniquement
 - Ne jamais modifier : `shared_state.py`, `notion_client.py`, `llm_client.py`, `streamlit_app.py`, `streamlit_home.py`
