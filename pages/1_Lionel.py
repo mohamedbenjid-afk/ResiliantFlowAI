@@ -439,25 +439,63 @@ with tab2:
         unsafe_allow_html=True,
     )
 
-    # Documents HSE depuis Notion
-    with st.expander("📄 Documents HSE associés à P-17", expanded=False):
-        try:
-            docs = nc.get_docs_hse(machine_id="P-17", persona="Lionel - Technicien")
-            if docs:
-                for d in docs:
-                    epi_list = ", ".join(d.get("epi") or []) or "Non spécifié"
-                    st.markdown(
-                        f'<div class="doc-box"><b>{d["titre"]}</b> '
-                        f'({d.get("type","")}) — v{d.get("version","?")} — '
-                        f'Risque : {d.get("niveau_risque","")}<br>'
-                        f'EPI : {epi_list}<br>'
-                        f'<small>{d.get("resume","")}</small></div>',
-                        unsafe_allow_html=True,
-                    )
-            else:
-                st.info("Aucun document HSE spécifique à P-17 trouvé dans Notion.")
-        except Exception:
-            st.warning("Documents HSE indisponibles.")
+    # EPI requis selon l'anomalie détectée
+    EPI_PAR_ANOMALIE = {
+        "Surchauffe": [
+            ("🪖", "Casque",               True),
+            ("🧤", "Gants anti-coupure",   True),
+            ("🥽", "Lunettes protection",   True),
+            ("👟", "Chaussures sécurité",   True),
+            ("🔥", "Gants thermiques",      True),   # spécifique surchauffe
+            ("👔", "Combinaison ignifugée", False),  # recommandé
+        ],
+        "Vibration excessive": [
+            ("🪖", "Casque",               True),
+            ("🧤", "Gants anti-coupure",   True),
+            ("🥽", "Lunettes protection",   True),
+            ("👟", "Chaussures sécurité",   True),
+            ("🎧", "Bouchons anti-bruit",   True),   # spécifique vibration
+        ],
+        "Pression insuffisante": [
+            ("🪖", "Casque",               True),
+            ("🧤", "Gants anti-coupure",   True),
+            ("🥽", "Lunettes protection",   True),
+            ("👟", "Chaussures sécurité",   True),
+            ("🧥", "Combinaison étanche",   True),   # spécifique pression/fuite
+        ],
+        "Usure normale": [
+            ("🪖", "Casque",               True),
+            ("🧤", "Gants anti-coupure",   True),
+            ("🥽", "Lunettes protection",   True),
+            ("👟", "Chaussures sécurité",   True),
+        ],
+    }
+    epis = EPI_PAR_ANOMALIE.get(anomalie, EPI_PAR_ANOMALIE["Usure normale"])
+    obligatoires = [e for e in epis if e[2]]
+    recommandes  = [e for e in epis if not e[2]]
+
+    epi_html = "".join(
+        f'<span style="display:inline-flex;align-items:center;gap:5px;'
+        f'background:#dcfce7;border:1px solid #86efac;border-radius:20px;'
+        f'padding:4px 12px;margin:3px;font-size:0.88rem;">'
+        f'{ico} {label}</span>'
+        for ico, label, _ in obligatoires
+    )
+    rec_html = "".join(
+        f'<span style="display:inline-flex;align-items:center;gap:5px;'
+        f'background:#fef9c3;border:1px solid #fde047;border-radius:20px;'
+        f'padding:4px 12px;margin:3px;font-size:0.88rem;color:#854d0e;">'
+        f'{ico} {label} <i>(recommandé)</i></span>'
+        for ico, label, _ in recommandes
+    )
+    st.markdown(
+        f'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px 16px;margin-bottom:12px;">'
+        f'<div style="font-weight:700;margin-bottom:8px;color:#166534;">🦺 EPI obligatoires — {anomalie}</div>'
+        f'<div style="flex-wrap:wrap;">{epi_html}</div>'
+        + (f'<div style="margin-top:6px;">{rec_html}</div>' if rec_html else "")
+        + '</div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown("---")
     st.markdown("### ✅ Checklist LOTO / EPI / Intervention")
