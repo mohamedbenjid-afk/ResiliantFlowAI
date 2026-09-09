@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import notion_client as nc
-from agents.agent_lionel import run_agent_lionel
+from agents.agent_lionel import run_agent_lionel, resumer_journee_lionel
 from shared_state import COMMON_CSS, init_session_state, update_sensors, RUL_NOMINAL
 from p17_context import P17_CONTEXT
 
@@ -114,23 +114,280 @@ STATUS_BG    = {"Nominal": "#dcfce7", "Alerte": "#fef3c7", "Critique": "#fee2e2"
 
 # ── TABS — K2 « Procédure » visible uniquement en Alerte/Critique (surchauffe) ─
 _show_k2 = r_status in ("Alerte", "Critique")
-_labels = ["📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing"]
+_labels = ["☀️ Ma journée", "📊 Mon poste", "📡 K0 — Surveillance", "📋 K1 — Briefing"]
 if _show_k2:
     _labels.append("🔧 K2 — Procédure 🔔")
 _labels += ["✅ K3 — Post-intervention", "⚖️ K4 — Arbitrage"]
 
 _tabs = st.tabs(_labels)
-tab_dash = _tabs[0]
-tab0 = _tabs[1]
-tab1 = _tabs[2]
+tab_jour = _tabs[0]
+tab_dash = _tabs[1]
+tab0 = _tabs[2]
+tab1 = _tabs[3]
 if _show_k2:
-    tab2 = _tabs[3]
-    tab3 = _tabs[4]
-    tab4 = _tabs[5]
+    tab2 = _tabs[4]
+    tab3 = _tabs[5]
+    tab4 = _tabs[6]
 else:
     tab2 = None
-    tab3 = _tabs[3]
-    tab4 = _tabs[4]
+    tab3 = _tabs[4]
+    tab4 = _tabs[5]
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ONGLET « ☀️ Ma journée » — brief matinal (agent) + choix traiter / reporter
+# ════════════════════════════════════════════════════════════════════════════════
+_PORDER = {"P1 - Critique": 0, "P2 - Haute": 1, "P3 - Normale": 2, "P4 - Basse": 3}
+
+_FALLBACK_INTERV = [
+    {"titre": "Remplacement roulement P-17 (surchauffe)", "machine": "P-17", "type": "Corrective",
+     "statut": "Planifiée", "priorite": "P1 - Critique", "duree_estimee": 0.6, "loto_requis": "Oui",
+     "composants": "Roulement 6205-2RS (casier B-07)", "habilitations": ["Mécanique"],
+     "description": "Surchauffe + vibration élevée → roulement 6205-2RS en fin de vie."},
+    {"titre": "Contrôle vibratoire pompe V-08", "machine": "V-08", "type": "Préventive conditionnelle",
+     "statut": "Planifiée", "priorite": "P2 - Haute", "duree_estimee": 0.3, "loto_requis": "Non",
+     "habilitations": ["Mécanique"], "description": "Relevé vibratoire + analyse spectrale suite alerte capteur."},
+    {"titre": "Graissage préventif convoyeur C-12", "machine": "C-12", "type": "Préventive systématique",
+     "statut": "Planifiée", "priorite": "P3 - Normale", "duree_estimee": 0.4, "loto_requis": "Non",
+     "habilitations": ["Mécanique"], "description": "Graissage périodique des paliers + contrôle courroie."},
+]
+
+
+def _charger_mes_interventions():
+    try:
+        items = nc.get_historique(limit=50) or []
+        mine = [i for i in items
+                if "lionel" in str(i.get("technicien", "")).lower()
+                and str(i.get("statut", "")) in ("Planifiée", "En cours")]
+        return mine or _FALLBACK_INTERV
+    except Exception:
+        return _FALLBACK_INTERV
+
+
+def _charger_arbitrages_sophie():
+    try:
+        pages = nc._query_db(nc.DB_IDS["decisions_sophie"], None, None) or []
+        arbs = []
+        for p in pages[:5]:
+            t = nc._prop(p, "Décision") or nc._prop(p, "Titre") or nc._prop(p, "Name") or ""
+            if t:
+                arbs.append(str(t))
+        return arbs
+    except Exception:
+        return []
+
+
+def _lionel_profil():
+    """Habilitations + heures restantes de Lionel (depuis la base équipe)."""
+    try:
+        for m in (nc.get_equipe() or []):
+            nom = f"{m.get('prenom','')} {m.get('nom','')}".lower()
+            if "lionel" in nom:
+                return {"habilitations": m.get("habilitations") or [],
+                        "heures_restantes": m.get("heures_restantes")}
+    except Exception:
+        pass
+    return {"habilitations": ["Mécanique", "Hydraulique"], "heures_restantes": None}
+
+
+def _stock_alertes(machines):
+    """Nombre de pièces en tension/rupture pour les machines de mes interventions."""
+    try:
+        pieces = nc.get_pieces() or []
+        n = 0
+        for p in pieces:
+            pm = str(p.get("machine", ""))
+            if any(mm and mm in pm for mm in machines):
+                s = str(p.get("statut_stock", "")).lower()
+                if "rupture" in s or "command" in s or "alerte" in s or "critique" in s:
+                    n += 1
+        return n
+    except Exception:
+        return None
+
+
+def _hab_ok(interv, mes_hab):
+    req = set(interv.get("habilitations") or [])
+    return (not req) or (not mes_hab) or req.issubset(set(mes_hab))
+
+
+with tab_jour:
+    st.subheader("☀️ Ma journée — Lionel · " + datetime.date.today().strftime("%d/%m/%Y"))
+    st.caption("Ton poste de travail : ta charge du jour, tes interventions, la consigne de l'agent, ton compte-rendu.")
+
+    if "mes_interventions" not in st.session_state:
+        st.session_state["mes_interventions"] = _charger_mes_interventions()
+    _interv = sorted(st.session_state["mes_interventions"],
+                     key=lambda i: _PORDER.get(i.get("priorite", ""), 9))
+    if "profil_lionel" not in st.session_state:
+        st.session_state["profil_lionel"] = _lionel_profil()
+    _profil = st.session_state["profil_lionel"]
+    _mes_hab = _profil.get("habilitations") or []
+    _machines = list({i.get("machine") for i in _interv if i.get("machine")})
+    if "stock_alertes" not in st.session_state:
+        st.session_state["stock_alertes"] = _stock_alertes(_machines)
+    _stock_n = st.session_state["stock_alertes"]
+
+    # ── KPIs vus par le technicien ───────────────────────────────────────────
+    _nb = len(_interv)
+    _nb_p1 = sum(1 for i in _interv if str(i.get("priorite", "")).startswith("P1"))
+    _total_h = sum(float(i.get("duree_estimee") or 0) for i in _interv)
+    _nb_loto = sum(1 for i in _interv if str(i.get("loto_requis", "")).lower().startswith("o"))
+    _hab_manq = sum(0 if _hab_ok(i, _mes_hab) else 1 for i in _interv)
+
+    _k1, _k2, _k3, _k4, _k5 = st.columns(5)
+    _k1.metric("🗂️ Interventions", _nb, f"{_nb_p1} P1" if _nb_p1 else "0 P1",
+               delta_color="inverse" if _nb_p1 else "off")
+    _k2.metric("⏱️ Charge du jour", f"{_total_h:.1f} h",
+               (f"dispo {_profil['heures_restantes']} h" if _profil.get("heures_restantes") else None),
+               delta_color="off")
+    _k3.metric("🔒 LOTO requis", _nb_loto)
+    _k4.metric("📦 Pièces", "OK" if _stock_n == 0 else (f"{_stock_n} en tension" if _stock_n else "—"),
+               delta_color="off")
+    _k5.metric("🎓 Habilitation", "OK" if _hab_manq == 0 else f"{_hab_manq} à vérifier",
+               delta_color="off")
+
+    # ── Ma prochaine intervention (call to action) ───────────────────────────
+    if _interv:
+        _next = _interv[0]
+        with st.container(border=True):
+            _pc1, _pc2 = st.columns([4, 1])
+            with _pc1:
+                st.markdown(f"**▶️ Ta prochaine intervention · {_next.get('priorite','')}**")
+                st.markdown(f"### {_next.get('titre','')}")
+                _loto = str(_next.get("loto_requis", "")).lower().startswith("o")
+                st.caption(f"{_next.get('machine','?')} · {_next.get('type','?')} · "
+                           f"~{_next.get('duree_estimee','?')} h · {'🔒 LOTO' if _loto else 'sans LOTO'}"
+                           + ("" if _hab_ok(_next, _mes_hab) else " · ⚠️ habilitation à vérifier"))
+            with _pc2:
+                if st.button("🔧 Traiter", key="next_treat", use_container_width=True):
+                    st.session_state["intervention_active"] = _next
+
+    st.divider()
+
+    # ── Brief du matin (agent) ───────────────────────────────────────────────
+    if "arbitrages_sophie" not in st.session_state:
+        st.session_state["arbitrages_sophie"] = _charger_arbitrages_sophie() or [
+            "P-17 priorisée en P1 — arrêt/bascule à valider avec Sophie avant intervention."
+        ]
+    _arbitrages = st.session_state["arbitrages_sophie"]
+
+    _cbrief, _crefr = st.columns([4, 1])
+    _cbrief.markdown("#### 🤖 Le mot de l'agent")
+    if _crefr.button("🔄 Rafraîchir", use_container_width=True):
+        st.session_state.pop("_brief_jour", None)
+    if "_brief_jour" not in st.session_state:
+        with st.spinner("🤖 L'agent prépare ton brief du matin…"):
+            try:
+                st.session_state["_brief_jour"] = resumer_journee_lionel(_interv, _arbitrages)
+            except Exception as _e:
+                st.session_state["_brief_jour"] = "_(brief indisponible : " + str(_e)[:80] + ")_"
+    st.markdown(st.session_state["_brief_jour"])
+
+    st.divider()
+
+    # ── Mes interventions — je traite ou je reporte ──────────────────────────
+    st.markdown("#### 🗂️ Mes interventions")
+    for _idx, _it in enumerate(_interv):
+        with st.container(border=True):
+            _c1, _c2, _c3 = st.columns([5, 2, 2])
+            _loto = str(_it.get("loto_requis", "")).lower().startswith("o")
+            _badges = ('🔒 LOTO' if _loto else 'sans LOTO')
+            if not _hab_ok(_it, _mes_hab):
+                _badges += " · ⚠️ habilitation"
+            _c1.markdown(
+                f"**{_it.get('titre','?')}**  \n"
+                f"{_it.get('machine','?')} · {_it.get('type','?')} · ~{_it.get('duree_estimee','?')} h · {_badges}"
+            )
+            _c2.markdown(f"**{_it.get('priorite','?')}**")
+            if _c3.button("Traiter", key=f"trait_{_idx}", use_container_width=True):
+                st.session_state["intervention_active"] = _it
+            if _c3.button("Reporter", key=f"rep_{_idx}", use_container_width=True):
+                st.info("Report transmis à Sophie (arbitrage).")
+
+    # ── Panneau intervention sélectionnée : consigne + sécurité + CR ─────────
+    _act = st.session_state.get("intervention_active")
+    if _act:
+        st.divider()
+        st.markdown(f"### 🔧 {_act.get('titre','')}")
+        st.caption(f"{_act.get('machine','?')} · {_act.get('type','?')} · priorité {_act.get('priorite','?')}")
+
+        _loto = str(_act.get("loto_requis", "")).lower().startswith("o")
+        _habs = _act.get("habilitations") or []
+        st.markdown(
+            "**🦺 Sécurité —** "
+            + ("🔒 **LOTO requis** (consigner disjoncteur, fermer vannes, purger). " if _loto else "Pas de LOTO. ")
+            + ("Habilitation : " + ", ".join(_habs) + ". " if _habs else "")
+            + "EPI : gants, lunettes, chaussures S3."
+        )
+        if not _hab_ok(_act, _mes_hab):
+            st.warning("⚠️ Une habilitation requise ne figure pas sur ton profil — escalade à Sophie avant d'intervenir.")
+
+        # Consigne : agent live pour P-17, sinon procédure depuis les données Notion
+        st.markdown("**🤖 Consigne de l'agent**")
+        if _act.get("machine") == "P-17":
+            _ck = "_consigne_P17"
+            if _ck not in st.session_state:
+                with st.spinner("🤖 L'agent prépare la consigne terrain…"):
+                    try:
+                        st.session_state[_ck] = run_agent_lionel(c_temp, c_vib, c_pres, c_rul)
+                    except Exception:
+                        st.session_state[_ck] = _fallback_reco_lionel(c_temp, c_vib, c_pres, c_rul)
+            _consigne = st.session_state[_ck]
+            st.markdown(_consigne)
+        else:
+            _consigne = _act.get("description") or "Exécuter l'intervention planifiée selon la gamme."
+            st.markdown("📋 **CONSIGNE —** " + _consigne)
+            if _act.get("composants"):
+                st.markdown("🔩 **Pièces —** " + str(_act.get("composants")))
+            st.markdown("🚨 **Escalade —** préviens Sophie si un arbitrage est nécessaire.  \n"
+                        "🛑 **Limites —** hors habilitation ou danger imprévu → stop + escalade.")
+
+        # Alerte RUL → lunettes G2 + mail (déclenchement)
+        if st.button("📢 Envoyer l'alerte (lunettes G2 + mail)", key="alerte_act"):
+            try:
+                from notify import envoyer_alerte_critique
+                _res = envoyer_alerte_critique(_act.get("machine", "P-17"), int(c_rul), _consigne)
+                if _res.get("ok"):
+                    st.success("Alerte envoyée par mail ✅ — les lunettes G2 suivent via le flux RUL.")
+                else:
+                    st.warning("Mail non envoyé : " + str(_res.get("error", "vérifier les secrets Gmail")))
+            except Exception as _e:
+                st.warning("Alerte non envoyée : " + str(_e)[:120])
+
+        # Compte-rendu (traçabilité) → Notion + notif Sophie
+        with st.form("cr_form"):
+            st.markdown("**✅ Compte-rendu d'intervention** (tout est tracé)")
+            _q1 = st.selectbox("Résultat", ["Réalisée — conforme", "Réalisée — avec réserve", "Non réalisée — escaladée"])
+            _q2 = st.text_input("Pièces réellement remplacées", str(_act.get("composants", "")))
+            _q3 = st.number_input("Durée réelle (h)", 0.0, 24.0,
+                                  float(_act.get("duree_estimee") or 0.5), 0.1)
+            _q4 = st.text_area("Observations terrain", "")
+            _q5 = st.checkbox("Contrôles OK après remise en service (T, vib, P dans les seuils)")
+            _sub = st.form_submit_button("💾 Enregistrer et notifier Sophie")
+        if _sub:
+            _data = {
+                "titre": "CR — " + _act.get("titre", ""),
+                "machine": _act.get("machine", "P-17"),
+                "type": _act.get("type", "Corrective"),
+                "statut": "Réalisée" if _q1.startswith("Réalisée") else "En cours",
+                "technicien": "Lionel",
+                "composants": _q2,
+                "description": _q4 or _act.get("description", ""),
+                "resultat": f"{_q1}. Contrôles {'OK' if _q5 else 'à revoir'}. Durée réelle {_q3} h.",
+                "duree_reelle": _q3,
+            }
+            try:
+                nc.create_intervention(_data)
+                st.success("Compte-rendu enregistré dans Notion ✅ (traçabilité).")
+                try:
+                    from notify import envoyer_bon_de_travail
+                    envoyer_bon_de_travail(_act.get("machine", "P-17"), _act.get("titre", ""),
+                                           _data["statut"], int(c_rul), _data["resultat"])
+                    st.caption("📧 Sophie a été notifiée.")
+                except Exception:
+                    st.caption("(Notification Sophie non envoyée — secrets mail à vérifier.)")
+            except Exception as _e:
+                st.error("Écriture Notion échouée : " + str(_e)[:150])
 
 # ════════════════════════════════════════════════════════════════════════════════
 # ONGLET DASHBOARD — « Mon poste » (accueil)
