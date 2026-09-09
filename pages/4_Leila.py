@@ -111,6 +111,23 @@ with tab0:
     if st.session_state.leila_result:
         st.markdown(st.session_state.leila_result)
 
+    # ── ACTE 7 — Autorisation HSE de l'intervention P-17 (gate avant action) ──
+    st.markdown("---")
+    st.markdown("##### ✅ Autorisation d'intervention — Pompe P-17")
+    st.caption("Contrôles obligatoires avant que Lionel n'intervienne (ISO 45001).")
+    _hc1 = st.checkbox("EPI confirmés (gants, lunettes, chaussures S3)", key="hse_epi")
+    _hc2 = st.checkbox("Consignation électrique — disjoncteur Q-17A cadenassé (LOTO)", key="hse_loto")
+    _hc3 = st.checkbox("Pression résiduelle purgée (point PT-17)", key="hse_pression")
+    _hc4 = st.checkbox("Habilitation technicien confirmée (Mécanique)", key="hse_hab")
+    if _hc1 and _hc2 and _hc3 and _hc4:
+        if st.button("🟢 AUTORISER L'INTERVENTION", type="primary",
+                     use_container_width=True, key="btn_hse_autoriser"):
+            st.session_state["p17_hse_autorisee"] = True
+    else:
+        st.info("Coche les 4 contrôles pour pouvoir autoriser l'intervention.")
+    if st.session_state.get("p17_hse_autorisee"):
+        st.success("✅ INTERVENTION AUTORISÉE — Lionel peut exécuter. Écart HSE : 0.")
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ONGLET L1 — Conformité Hebdomadaire
 # ══════════════════════════════════════════════════════════════════════════════

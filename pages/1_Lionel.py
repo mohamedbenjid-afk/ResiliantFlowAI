@@ -322,6 +322,12 @@ with tab_jour:
         if not _hab_ok(_act, _mes_hab):
             st.warning("⚠️ Une habilitation requise ne figure pas sur ton profil — escalade à Sophie avant d'intervenir.")
 
+        # ── Autorisation HSE (Acte 7) — feu vert de Leila avant exécution ────
+        if st.session_state.get("p17_hse_autorisee"):
+            st.success("🟢 INTERVENTION AUTORISÉE par la HSE (Leila) — tu peux exécuter.")
+        else:
+            st.warning("⏳ En attente de l'autorisation HSE (Leila) avant d'intervenir.")
+
         # Consigne : agent live pour P-17, sinon procédure depuis les données Notion
         st.markdown("**🤖 Consigne de l'agent**")
         if _act.get("machine") == "P-17":

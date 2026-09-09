@@ -45,6 +45,16 @@ with col_status:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<span class="status-badge">✅ Système opérationnel</span>', unsafe_allow_html=True)
 
+st.markdown(
+    '<div style="background:#f8fafc;border-left:4px solid #d4af37;border-radius:6px;'
+    'padding:14px 18px;margin-top:8px;color:#334155;font-size:0.9rem;line-height:1.6;">'
+    '<b>« La panne qui n\'a pas eu lieu ».</b> À 6h du matin, une pompe critique (P-17) risque '
+    'de tomber en panne sous 48h. Au lieu d\'attendre la panne, on la suit <i>avant</i> '
+    'qu\'elle n\'arrive : une même alerte devient une décision différente selon le métier — '
+    '<b>Lionel agit</b>, <b>Sophie arbitre</b>, <b>Leila sécurise</b>, <b>Antoine mesure</b>.'
+    '</div>', unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+
 st.markdown("---")
 st.markdown("### Sélectionnez votre espace de travail")
 st.markdown(

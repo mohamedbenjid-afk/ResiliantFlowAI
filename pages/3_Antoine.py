@@ -114,6 +114,22 @@ with tab0:
                         unsafe_allow_html=True
                     )
 
+    # ── ACTE 9 — Alerte stratégique P-17 + chaîne d'explication ──────────────
+    st.markdown("---")
+    st.markdown("#### 🎯 Alerte stratégique — Pompe P-17 : la chaîne de valeur")
+    _steps = ["📡 Signal IoT", "⚠️ RUL < 2 j", "🧩 Contexte analysé",
+              "🔀 Scénarios A/B/C", "✅ Reco : mardi 08:00",
+              "🔧 Intervention réalisée", "📉 Risque réduit"]
+    _chain = ' <span style="color:#94a3b8;">→</span> '.join(
+        f'<span style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;'
+        f'padding:6px 10px;font-size:0.82rem;color:#1e293b;white-space:nowrap;">{s}</span>'
+        for s in _steps)
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;line-height:2.4;">{_chain}</div>',
+        unsafe_allow_html=True)
+    st.caption("« Détecter → prédire → comprendre → simuler → prescrire → agir → mesurer » : "
+               "une même donnée technique devient une décision, puis une valeur mesurable.")
+
 # ═══════════════════════════════════════════════════════════════════════════
 # TAB 1 — US-A1 : Alertes & Risques
 # ═══════════════════════════════════════════════════════════════════════════
