@@ -165,16 +165,13 @@ with tab1:
     st.markdown("---")
 
     jours_report = st.slider(
-        "⏳ De combien d'heures veux-tu reporter l'intervention ?",
-        min_value=0, max_value=72, value=24, step=4,
-        format="%d h",
+        "⏳ De combien de JOURS veux-tu reporter l'intervention ?",
+        min_value=0, max_value=7, value=1, step=1,
+        format="%d j",
     )
 
-    # Calcul RUL projeté et risque (valeurs backlog US-S1 : 73% / 47 000€)
-    # jours_report est saisi en HEURES par le curseur, alors que c_rul (RUL) est
-    # en JOURS — conversion nécessaire avant soustraction (sinon on retire des
-    # "jours" en croyant retirer des heures, ce qui fait chuter le RUL ~24x trop vite).
-    rul_projete  = max(0, round(c_rul - jours_report / 24, 1))
+    # RUL projeté — tout en JOURS (cohérent avec le reste de l'app)
+    rul_projete  = max(0, round(c_rul - jours_report, 1))
 
     # Risque de panne : courbe continue calée sur les seuils déjà utilisés dans
     # shared_state.py (Nominal > 60j, Critique ≤ 2j) plutôt que des tranches
@@ -283,6 +280,54 @@ with tab1:
         f'<div style="font-size:0.75rem;color:#64748b;margin-top:4px;">{detail_reco}</div>'
         f'</div>', unsafe_allow_html=True,
     )
+
+    # ── ACTE 4 → 5 : Valider la recommandation → planifier pour Lionel ────────
+    st.markdown("---")
+    st.markdown("### 🎯 Recommandation prescriptive")
+    import datetime as _dt
+    _today = _dt.date.today()
+    _ahead = (1 - _today.weekday()) % 7          # prochain mardi (mardi = 1)
+    _ahead = 7 if _ahead == 0 else _ahead
+    _reco_date = _today + _dt.timedelta(days=_ahead)
+    _reco_when = "mardi " + _reco_date.strftime("%d/%m") + " à 08:00"
+    st.markdown(
+        f"**RECOMMANDATION IA — Intervenir {_reco_when}**\n\n"
+        f"- Technicien **Lionel** disponible et habilité (Mécanique)\n"
+        f"- Pièce **roulement 6205-2RS** disponible (casier **B-07**)\n"
+        f"- Impact production optimisé · risque résiduel acceptable"
+    )
+    if st.button("✅ VALIDER LA RECOMMANDATION (planifier pour Lionel)",
+                 type="primary", use_container_width=True):
+        try:
+            nc.create_intervention({
+                "titre":       "Intervention prescriptive P-17 (roulement 6205-2RS)",
+                "machine":     "P-17",
+                "type":        "Corrective",
+                "statut":      "Planifiée",
+                "technicien":  "Lionel",
+                "priorite":    "P1 - Critique",
+                "composants":  "Roulement 6205-2RS (casier B-07), graisse Mobilux EP2",
+                "loto_requis": "Oui",
+                "date":        _reco_date.isoformat(),
+                "duree_estimee": 0.6,
+                "description": ("Validée par Sophie le " + _today.strftime("%d/%m")
+                                + f". Fenêtre : {_reco_when}. Surchauffe + vibration P-17 → "
+                                "roulement 6205-2RS en fin de vie. Consigner Q-17A, isoler "
+                                "V-17A/V-17B, purger PT-17, remplacer le roulement, vérifier "
+                                "débit 45 m³/h et vibration < 1.5 mm/s."),
+            })
+            st.success(f"✅ Recommandation validée — mission transmise à Lionel ({_reco_when}). "
+                       "Elle apparaît dans son onglet « ☀️ Ma journée ».")
+            try:
+                from notify import envoyer_bon_de_travail
+                envoyer_bon_de_travail("P-17", "Intervention prescriptive (roulement 6205-2RS)",
+                                       "Planifiée", int(c_rul),
+                                       f"Validée par Sophie — planifiée {_reco_when} pour Lionel.")
+                st.caption("📧 Bon de travail envoyé à Lionel.")
+            except Exception:
+                pass
+        except Exception as _e:
+            st.error(f"Impossible de transmettre à Lionel : {str(_e)[:150]}")
 
     # ── Enregistrement de la décision (US-S7) ────────────────────────────────
     st.markdown("---")
