@@ -286,7 +286,12 @@ with tab_jour:
     st.divider()
 
     # ── Mes interventions — je traite ou je reporte ──────────────────────────
-    st.markdown("#### 🗂️ Mes interventions")
+    _mih, _mir = st.columns([4, 1])
+    _mih.markdown("#### 🗂️ Mes interventions")
+    if _mir.button("🔄 Recharger", key="reload_interv",
+                   help="Recharge depuis Notion (ex. après validation de Sophie)"):
+        st.session_state.pop("mes_interventions", None)
+        st.rerun()
     for _idx, _it in enumerate(_interv):
         with st.container(border=True):
             _c1, _c2, _c3 = st.columns([5, 2, 2])
