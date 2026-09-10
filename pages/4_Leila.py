@@ -34,7 +34,7 @@ if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True
 
 st.sidebar.caption("Statut machine : P-17 (Unité B)")
 st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
-st.sidebar.caption(f"RUL estimé : {c_rul}h — {r_status}")
+st.sidebar.caption(f"RUL estimé : {c_rul}j — {r_status}")
 st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", use_container_width=True)
 
 # ── CONTENU PRINCIPAL ─────────────────────────────────────────────────────────
