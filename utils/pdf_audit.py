@@ -1,7 +1,7 @@
 """
 utils/pdf_audit.py
 Générateur de Dossier de Preuve de Conformité ISO 45001:2018
-pour les interventions de maintenance sur la Pompe P-17.
+pour les interventions de maintenance sur la P-17.
 
 Usage:
     from utils.pdf_audit import generate_audit_pdf
@@ -494,13 +494,13 @@ def _section_loto(story, styles, ctx):
     story.append(_sp(4))
     story.append(Paragraph(
         "Conformément à NF C18-510 et ISO 50001 — Procédure de Condamnation et Cadenassage "
-        "obligatoire avant toute intervention sur la Pompe P-17.",
+        "obligatoire avant toute intervention sur la P-17.",
         styles["body"]
     ))
     story.append(_sp(6))
 
     etapes = [
-        ("1", "CONSIGNATION", "Identifier l'équipement à consigner — Pompe P-17, Unité B",
+        ("1", "CONSIGNATION", "Identifier l'équipement à consigner — P-17, Unité B",
          "Technicien",    ""),
         ("2", "CONSIGNATION", "Informer le responsable de production de l'arrêt imminent",
          "Technicien",    ""),
@@ -720,7 +720,7 @@ def _section_docs_hse(story, styles, ctx):
     docs = ctx.get("docs_hse", [])
     if not docs:
         docs = [
-            {"titre": "Procédure LOTO Pompe P-17", "type": "Procédure",
+            {"titre": "Procédure LOTO P-17", "type": "Procédure",
              "niveau_risque": "Élevé", "statut": "Validé", "version": "v3",
              "auteur": "Leila HSE", "date_validation": "2025-01-15"},
             {"titre": "Fiche EPI Intervention Pompe", "type": "Fiche sécurité",
@@ -874,7 +874,7 @@ def generate_audit_pdf(context: dict) -> bytes:
 
     Args:
         context (dict) : {
-            "equipement"        : "Pompe P-17",
+            "equipement"        : "P-17",
             "technicien"        : "Lionel",
             "temp"              : 117.0,   # °C
             "vib"               : 5.8,     # mm/s

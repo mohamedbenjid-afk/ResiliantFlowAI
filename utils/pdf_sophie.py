@@ -11,7 +11,7 @@ Usage:
 ctx attendu (voir pages/2_Sophie.py, TAB 3 — S3 RAPPORT HEBDOMADAIRE) :
     {
         "semaine":       int,
-        "machine":       str,   # ex "Pompe P-17"
+        "machine":       str,   # ex "P-17"
         "rul":           int/float,
         "statut":        str,   # "Nominal" / "Alerte" / "Critique"
         "historique":    list[dict]  # titre, type, statut, date, technicien, duree_estimee, cout_estime
@@ -291,7 +291,7 @@ def generate_sophie_pdf(data: dict) -> bytes:
         "date_str": today.strftime("%d/%m/%Y"),
         "generated_at": now.strftime("%d/%m/%Y à %H:%M"),
         "semaine": semaine,
-        "machine": data.get("machine", "Pompe P-17"),
+        "machine": data.get("machine", "P-17"),
         "rul": data.get("rul", "—"),
         "statut": data.get("statut", "—"),
         "taux_realisation": data.get("taux_realisation", 0),

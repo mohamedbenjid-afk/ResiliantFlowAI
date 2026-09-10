@@ -32,7 +32,7 @@ st.sidebar.markdown("### ResilientFlow AI\n*Couche Prescriptive v1*")
 if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True):
     st.session_state.running = not st.session_state.running
 
-st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
+st.sidebar.caption("Statut machine : P-17 (Unité B)")
 st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
 st.sidebar.caption(f"RUL estimé : {c_rul}h — {r_status}")
 st.sidebar.page_link("streamlit_home.py", label="⬅️ Retour à l'accueil", use_container_width=True)
@@ -113,7 +113,7 @@ with tab0:
 
     # ── ACTE 7 — Autorisation HSE de l'intervention P-17 (gate avant action) ──
     st.markdown("---")
-    st.markdown("##### ✅ Autorisation d'intervention — Pompe P-17")
+    st.markdown("##### ✅ Autorisation d'intervention — P-17")
     st.caption("Contrôles obligatoires avant que Lionel n'intervienne (ISO 45001).")
     _hc1 = st.checkbox("EPI confirmés (gants, lunettes, chaussures S3)", key="hse_epi")
     _hc2 = st.checkbox("Consignation électrique — disjoncteur Q-17A cadenassé (LOTO)", key="hse_loto")
@@ -233,7 +233,7 @@ with tab2:
                     notion_ok  = True
                 except Exception:
                     machine = {
-                        "nom": "Pompe P-17", "type": "Pompe centrifuge", "site": "Unité B",
+                        "nom": "P-17", "type": "Pompe centrifuge", "site": "Unité B",
                         "criticite": "Critique", "mise_en_service": "2021-03-15",
                         "fabricant": "KSB Group", "modele": "Etanorm SYT 040-025-160",
                         "numero_serie": "KSB-2021-P17-UB",
@@ -269,7 +269,7 @@ with tab2:
                     type_anomalie = "Dégradation générale — RUL critique"
 
                 context = {
-                    "equipement"   : "Pompe P-17",
+                    "equipement"   : "P-17",
                     "technicien"   : technicien_nom,
                     "temp"         : float(c_temp),
                     "vib"          : float(c_vib),
@@ -318,7 +318,7 @@ with tab2:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.markdown("#### 🔍 Chronologie post-incident")
-    st.caption("Timeline horodatée minute par minute de la dernière intervention sur Pompe P-17.")
+    st.caption("Timeline horodatée minute par minute de la dernière intervention sur P-17.")
     st.info("🚧 Fonctionnalité disponible en Sprint 4 — nécessite l'historique complet des interventions Notion.")
 
     # Placeholder visuel avec la dernière intervention connue

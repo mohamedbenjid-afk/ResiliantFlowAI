@@ -15,7 +15,7 @@ from p17_context import P17_CONTEXT, prompt_context
 
 
 def _extract_code(nom: str) -> str:
-    """Extrait le code machine (ex: 'P-17') depuis 'Pompe P-17'."""
+    """Extrait le code machine (ex: 'P-17') depuis 'P-17'."""
     if not nom:
         return nom
     m = re.search(r'\b([A-Z]+-\d+)\b', nom)
@@ -94,7 +94,7 @@ TOOLS = [
         "description": "Récupère la fiche technique de la machine : seuils d'alerte (température, vibration, pression), statut, RUL, responsable et notes.",
         "input_schema": {
             "type": "object",
-            "properties": {"nom": {"type": "string", "description": "Nom de la machine ex: 'Pompe P-17'"}},
+            "properties": {"nom": {"type": "string", "description": "Nom de la machine ex: 'P-17'"}},
             "required": ["nom"]
         }
     },
@@ -131,7 +131,7 @@ def _execute(name, inputs):
 
 # ── PROMPT SYSTÈME ────────────────────────────────────────────────────────────
 SYSTEM = f"""Tu es l'assistant de terrain de Lionel, technicien habilité Mécanique/Hydraulique,
-sur la Pompe P-17 (Unité B). Tu reçois des relevés capteurs temps réel.
+sur la P-17 (Unité B). Tu reçois des relevés capteurs temps réel.
 
 Le RUL est exprimé EN JOURS (source : système prédictif GMAO). RUL faible = panne proche.
 Utilise les outils Notion pour confirmer les seuils machine, l'intervention planifiée et le
@@ -194,7 +194,7 @@ def run_agent_lionel(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> 
         f"- Pression    : {c_pres:.1f} bar  (nominale ~4.4 bar)\n"
         f"- RUL estimé  : {c_rul} jours (source : système prédictif GMAO)\n\n"
         f"Analyse la situation et donne les instructions d'intervention terrain. "
-        f"Commence par appeler get_fiche_equipement('Pompe P-17') pour confirmer "
+        f"Commence par appeler get_fiche_equipement('P-17') pour confirmer "
         f"le contexte machine, puis vérifie l'intervention planifiée et les pièces."
     )
 

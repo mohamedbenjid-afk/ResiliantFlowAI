@@ -40,7 +40,7 @@ st.markdown("""
 col_title, col_status = st.columns([3, 1])
 with col_title:
     st.markdown('<div class="hero-title">⚙️ ResilientFlow AI</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-subtitle">Tableau de bord prescriptif — Couche IA v1 · Pompe P-17, Unité B</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-subtitle">Tableau de bord prescriptif — Couche IA v1 · P-17, Unité B</div>', unsafe_allow_html=True)
 with col_status:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown('<span class="status-badge">✅ Système opérationnel</span>', unsafe_allow_html=True)
@@ -99,4 +99,4 @@ for col, icon, name, role, desc, page_path, btn_label in profiles:
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("---")
-st.caption("ResilientFlow AI · Couche Prescriptive v1 · Machine surveillée : Pompe P-17 — Unité B")
+st.caption("ResilientFlow AI · Couche Prescriptive v1 · Machine surveillée : P-17 — Unité B")

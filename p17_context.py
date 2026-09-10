@@ -1,11 +1,11 @@
 # p17_context.py
-# Contexte terrain FIXE de la Pompe P-17 — SOURCE UNIQUE partagée par
+# Contexte terrain FIXE de la P-17 — SOURCE UNIQUE partagée par
 # l'agent (agents/agent_lionel.py) et la procédure K2 (pages/1_Lionel.py).
 # But : éviter que l'agent invente des références et garantir la cohérence
 # agent ↔ K2. Toute ref terrain P-17 doit venir d'ici.
 
 P17_CONTEXT = {
-    "machine":          "Pompe P-17",
+    "machine":          "P-17",
     "unite":            "Unité B",
     # ── Consignation LOTO ────────────────────────────────────────────────
     "disjoncteur":      "Q-17A",

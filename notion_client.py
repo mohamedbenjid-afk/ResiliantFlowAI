@@ -93,7 +93,7 @@ def _prop(page: dict, name: str):
 #          Documentation technique
 
 def _extract_code(nom: str) -> str:
-    """Extrait le code machine (ex: 'P-17') depuis un titre comme 'Pompe P-17'."""
+    """Extrait le code machine (ex: 'P-17') depuis un titre comme 'P-17'."""
     if not nom:
         return nom
     m = re.search(r'\b([A-Z]+-\d+)\b', nom)

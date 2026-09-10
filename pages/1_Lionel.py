@@ -61,7 +61,7 @@ with st.sidebar:
     st.page_link("streamlit_home.py", label="← Retour à l'accueil", use_container_width=True)
     st.markdown("---")
     st.markdown("### 🔧 Lionel — Technicien Terrain")
-    st.caption("Machine surveillée : **Pompe P-17** — Unité B")
+    st.caption("Machine surveillée : **P-17** — Unité B")
     st.markdown("---")
 
     init_session_state()
@@ -664,7 +664,7 @@ with tab_dash:
 # ════════════════════════════════════════════════════════════════════════════════
 def _render_k0():
     c_temp, c_vib, c_pres, c_cur, c_rul, r_status, rul_pct = update_sensors()
-    st.markdown("## 📡 Surveillance temps réel — Pompe P-17")
+    st.markdown("## 📡 Surveillance temps réel — P-17")
 
     # KPI metrics
     m1, m2, m3, m4 = st.columns(4)
@@ -963,7 +963,7 @@ if tab1 is not None:
 # ════════════════════════════════════════════════════════════════════════════════
 if tab2 is not None:
   with tab2:
-    st.markdown("## 📘 Procédure d'intervention — Pompe P-17")
+    st.markdown("## 📘 Procédure d'intervention — P-17")
     st.caption("Machine instrumentée pilote · Unité B")
 
     st.markdown("""
@@ -1148,7 +1148,7 @@ if tab2 is not None:
             try:
                 from notify import envoyer_bon_de_travail
                 with st.spinner("📤 Envoi du bon de travail au manager..."):
-                    _bt = envoyer_bon_de_travail("Pompe P-17", anomalie, r_status, c_rul, _recap)
+                    _bt = envoyer_bon_de_travail("P-17", anomalie, r_status, c_rul, _recap)
             except Exception as e:
                 _bt = {"ok": False, "error": str(e)}
             if _bt.get("ok"):
@@ -1203,7 +1203,7 @@ if tab3 is not None:
             # Q1 — Machine
             f_machine = st.selectbox(
                 "1️⃣  Machine concernée",
-                ["Pompe P-17 (P-17)", "Compresseur C-03 (C-03)",
+                ["P-17", "Compresseur C-03 (C-03)",
                  "Convoyeur CV-01 (CV-01)", "Autre"],
                 index=0,
             )
@@ -1306,7 +1306,7 @@ if tab4 is not None:
     except Exception:
         # Fallback — données fictives représentatives
         all_machines = [
-            {"id": "P-17",  "nom": "Pompe P-17",         "statut": "Alerte",
+            {"id": "P-17",  "nom": "P-17",         "statut": "Alerte",
              "rul_jours": 18, "score_degradation": 45, "temperature": 77.2, "vibration": 2.8,
              "unite": "Unité B", "responsable": "Lionel Dumont"},
             {"id": "C-03",  "nom": "Compresseur C-03",   "statut": "Alerte",

@@ -35,7 +35,7 @@ st.sidebar.markdown("### ResilientFlow AI\n*Couche Prescriptive v1*")
 if st.sidebar.button("⏸️ Pause / ▶️ Reprendre", use_container_width=True):
     st.session_state.running = not st.session_state.running
 
-st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
+st.sidebar.caption("Statut machine : P-17 (Unité B)")
 st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
 
 # US-A0 : sidebar corrigée — RUL + statut sur une seule ligne, avec code couleur
@@ -52,7 +52,7 @@ st.markdown("*Analyse multi-machine, MTBF/MTTR, simulation CAPEX vs OPEX et fich
 if r_status in ("Alerte", "Critique"):
     _icon = "🔴" if r_status == "Critique" else "🟠"
     st.error(
-        f"{_icon} **Alerte {r_status} — Pompe P-17 (Unité B)**  \n"
+        f"{_icon} **Alerte {r_status} — P-17 (Unité B)**  \n"
         f"RUL restant : **{c_rul} h** ({rul_percentage:.0f}% de vie restante).  \n"
         f"**Impact estimé :** risque d'arrêt de production non planifié.  \n"
         f"**Recommandation :** lancer l'analyse stratégique (onglet 💰 Simulation Financière) "
@@ -116,7 +116,7 @@ with tab0:
 
     # ── ACTE 9 — Alerte stratégique P-17 + chaîne d'explication ──────────────
     st.markdown("---")
-    st.markdown("#### 🎯 Alerte stratégique — Pompe P-17 : la chaîne de valeur")
+    st.markdown("#### 🎯 Alerte stratégique — P-17 : la chaîne de valeur")
     _steps = ["📡 Signal IoT", "⚠️ RUL < 2 j", "🧩 Contexte analysé",
               "🔀 Scénarios A/B/C", "✅ Reco : mardi 08:00",
               "🔧 Intervention réalisée", "📉 Risque réduit"]
@@ -139,7 +139,7 @@ with tab1:
     if r_status in ("Alerte", "Critique"):
         _icon = "🔴" if r_status == "Critique" else "🟠"
         st.error(
-            f"{_icon} **{r_status} — Pompe P-17 (Unité B)**  \n"
+            f"{_icon} **{r_status} — P-17 (Unité B)**  \n"
             f"RUL restant : **{c_rul} h** ({rul_percentage:.0f}% de vie restante).  \n"
             f"**Impact estimé :** risque d'arrêt de production non planifié, "
             f"immobilisation de la ligne concernée.  \n"
@@ -147,7 +147,7 @@ with tab1:
             f"le remplacement dans l'onglet 💰 Simulation Financière."
         )
     else:
-        st.success("🟢 Aucune alerte immédiate — Pompe P-17 en fonctionnement nominal.")
+        st.success("🟢 Aucune alerte immédiate — P-17 en fonctionnement nominal.")
 
     st.markdown("---")
     st.markdown("##### 🏭 Portfolio machines — Ranking par risque")
@@ -185,7 +185,7 @@ with tab1:
 # TAB 2 — US-A2 : Simulation Financière
 # ═══════════════════════════════════════════════════════════════════════════
 with tab2:
-    st.markdown("#### 🔮 Projection financière illustrative — Pompe P-17")
+    st.markdown("#### 🔮 Projection financière illustrative — P-17")
 
     col_strat, col_graph = st.columns([1, 2])
     with col_strat:
@@ -242,7 +242,7 @@ with tab2:
                 # Le schéma Notion ESCP ne contient pas de champs température/vibration
                 # temps réel (cf. BRIEFING), donc c_temp/c_vib/c_pres ne sont pas transmis
                 # à l'agent — ils restent affichés uniquement dans le simulateur capteurs.
-                result = run_agent_antoine(equipement="Pompe P-17", c_rul=int(c_rul))
+                result = run_agent_antoine(equipement="P-17", c_rul=int(c_rul))
                 st.session_state.antoine_result    = result
                 st.session_state.antoine_pdf_bytes = None  # reset PDF
                 st.session_state.antoine_pdf_ref   = None

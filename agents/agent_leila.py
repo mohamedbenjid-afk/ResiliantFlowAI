@@ -212,7 +212,7 @@ def get_matrice_risques_capteurs(c_temp: float, c_vib: float, c_pres: float) -> 
 
     return {
         "date_evaluation":    date.today().isoformat(),
-        "equipement":         "Pompe P-17",
+        "equipement":         "P-17",
         "nb_risques":         len(risques),
         "risque_maximal":     max((r["niveau"] for r in risques),
                                   key=lambda x: ["FAIBLE","MODÉRÉ","ÉLEVÉ"].index(x)),
@@ -353,7 +353,7 @@ def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> s
     Retourne l'évaluation HSE complète en texte Markdown.
     """
     situation = (
-        f"ÉVALUATION HSE — Pompe P-17, Unité B\n"
+        f"ÉVALUATION HSE — P-17, Unité B\n"
         f"- Température : {c_temp:.1f}°C\n"
         f"- Vibration   : {c_vib:.2f} mm/s\n"
         f"- Pression    : {c_pres:.1f} bar\n"

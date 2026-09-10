@@ -94,7 +94,7 @@ def envoyer_alerte_critique(machine_id: str, rul_jours, reco_markdown: str) -> d
                 "error": f"Aucun email trouvé pour le référent « {ref_nom or '?'} »"}
 
     horodatage = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    machine_label = "Pompe P-17" if machine_id == "P-17" else machine_id
+    machine_label = "P-17" if machine_id == "P-17" else machine_id
     subject = f"🔴 ALERTE CRITIQUE {machine_label} — RUL {rul_jours} j — action requise"
 
     text_body = (

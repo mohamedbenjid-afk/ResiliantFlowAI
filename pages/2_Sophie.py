@@ -43,7 +43,7 @@ with st.sidebar:
         st.session_state.running = not st.session_state.running
         st.rerun()
     st.markdown("---")
-    st.sidebar.caption("Statut machine : Pompe P-17 (Unité B)")
+    st.sidebar.caption("Statut machine : P-17 (Unité B)")
     st.sidebar.caption("Horodatage système : t = " + str(st.session_state.tick))
     st.sidebar.caption(f"RUL estimé : {c_rul}j ({r_status})")
 
@@ -71,7 +71,7 @@ with tab0:
             raise ValueError("Liste vide")
     except Exception:
         machines = [
-            {"id": "P-17",  "nom": "Pompe P-17",        "statut": "Critique", "rul_jours": c_rul, "unite": "Unité B",  "responsable": "Sophie"},
+            {"id": "P-17",  "nom": "P-17",        "statut": "Critique", "rul_jours": c_rul, "unite": "Unité B",  "responsable": "Sophie"},
             {"id": "C-03",  "nom": "Compresseur C-03",  "statut": "Alerte",   "rul_jours": 30,    "unite": "Ligne 1",  "responsable": "Sophie"},
             {"id": "M-08",  "nom": "Moteur M-08",       "statut": "Nominal",  "rul_jours": 90,    "unite": "Ligne 2",  "responsable": "Sophie"},
         ]
@@ -123,7 +123,7 @@ with tab0:
 
     # OFs actifs sur P-17
     st.markdown("---")
-    st.markdown("### 🏭 Ordres de fabrication actifs — Pompe P-17")
+    st.markdown("### 🏭 Ordres de fabrication actifs — P-17")
     try:
         ofs = nc.get_ordres_fabrication(statut="En cours", machine_id="P-17")
         if ofs:

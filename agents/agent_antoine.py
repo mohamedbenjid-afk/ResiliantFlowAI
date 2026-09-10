@@ -330,12 +330,12 @@ def get_top_equipements_a_risque() -> dict:
         })
 
     # Déduplication : si deux entrées ont le même ID machine ou le même code
-    # (ex: "P-17" et "Pompe P-17"), on garde celle avec le score de risque le plus élevé
+    # (ex: "P-17" et "P-17"), on garde celle avec le score de risque le plus élevé
     seen = {}
     for m in ranking:
         key = m.get("id_machine") or ""
         if not key:
-            # Extraire le code équipement (ex: "P-17" depuis "Pompe P-17")
+            # Extraire le code équipement (ex: "P-17" depuis "P-17")
             parts = m["machine"].split()
             key = next((p for p in parts if "-" in p), m["machine"])
         if key not in seen or m["score_risque"] > seen[key]["score_risque"]:
@@ -527,7 +527,7 @@ Sois synthétique et chiffré. Antoine parle au CODIR. Jamais plus de 3 niveaux 
 
 
 # ── FONCTION PRINCIPALE ────────────────────────────────────────────────────────
-def run_agent_antoine(equipement: str = "Pompe P-17", c_rul: int = None) -> dict:
+def run_agent_antoine(equipement: str = "P-17", c_rul: int = None) -> dict:
     """
     Lance l'agent Antoine.
 
@@ -623,5 +623,5 @@ Recommandation financière : {reco}
 
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    result = run_agent_antoine(equipement="Pompe P-17", c_rul=18)
+    result = run_agent_antoine(equipement="P-17", c_rul=18)
     print(result["analyse"])

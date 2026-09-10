@@ -5,7 +5,7 @@ Rôle : évaluer l'impact production d'une alerte, arbitrer entre intervention
  
 Intégration dans pages/2_Sophie.py :
     from agents.agent_sophie import run_agent_sophie
-    arbitrage = run_agent_sophie(c_rul, equipement="Pompe P-17")
+    arbitrage = run_agent_sophie(c_rul, equipement="P-17")
 """
  
 import os, json
@@ -233,7 +233,7 @@ Sois factuel. Chiffre les risques financiers quand tu le peux.
  
  
 # ── FONCTION PRINCIPALE ───────────────────────────────────────────────────────
-def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
+def run_agent_sophie(c_rul: int, equipement: str = "P-17",
                      c_temp: float = None, c_vib: float = None) -> str:
     """
     Lance l'agent Sophie avec le RUL courant et le contexte machine.
@@ -302,4 +302,4 @@ def run_agent_sophie(c_rul: int, equipement: str = "Pompe P-17",
  
 # ── TEST STANDALONE ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(run_agent_sophie(c_rul=18, equipement="Pompe P-17", c_temp=78.0, c_vib=5.8))
+    print(run_agent_sophie(c_rul=18, equipement="P-17", c_temp=78.0, c_vib=5.8))

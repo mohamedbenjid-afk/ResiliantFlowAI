@@ -1,7 +1,7 @@
 """
 api_rul.py — ResilientFlow AI · Microservice RUL live
 ======================================================
-FastAPI qui expose le RUL temps réel de la Pompe P-17.
+FastAPI qui expose le RUL temps réel de la P-17.
 Miroir exact de la logique shared_state.py (ne pas modifier shared_state.py).
 
 Lancer :
@@ -44,7 +44,7 @@ from pydantic import BaseModel
 
 app = FastAPI(
     title="ResilientFlow AI — RUL API",
-    description="RUL live de la Pompe P-17 pour Even Realities G2",
+    description="RUL live de la P-17 pour Even Realities G2",
     version="1.0.0",
 )
 
@@ -288,7 +288,7 @@ _CONTROL_HTML = """<!doctype html><html lang="fr"><head><meta charset="utf-8">
  button:active{transform:scale(.97);}
  .full{grid-column:1/3;}
 </style></head><body>
- <h1>🕶️ Télécommande démo — Pompe P-17</h1>
+ <h1>🕶️ Télécommande démo — P-17</h1>
  <div class="sub">Change le scénario en direct · les lunettes G2 suivent</div>
  <div class="live">
    <div style="color:#94a3b8;font-size:.8rem;">RUL estimé</div>
