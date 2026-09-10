@@ -329,43 +329,8 @@ with tab1:
         except Exception as _e:
             st.error(f"Impossible de transmettre à Lionel : {str(_e)[:150]}")
 
-    # ── Enregistrement de la décision (US-S7) ────────────────────────────────
-    st.markdown("---")
-    if st.button("💾 Enregistrer ma décision", use_container_width=True):
-        try:
-            decision_label = "Intervention maintenue" if jours_report == 0 else "Reportée"
-            scenario_label = "Intervention immédiate" if jours_report == 0 else f"Report {jours_report}h"
-            nc.create_decision({
-                "equipement":    "P-17",
-                "date_heure":    datetime.datetime.now().isoformat(),
-                "rul_jours":     c_rul,
-                "temperature":   round(float(c_temp), 1),
-                "vibrations":    round(float(c_vib), 2),
-                "scenario":      scenario_label,
-                "risque_pct":    risque,
-                "impact_eur":    impact,
-                "decision":      decision_label,
-                "resultat_reel": "En attente",
-                "commentaire":   f"RUL projeté {rul_projete}j · Coût intervention {cout_intervention:,}€ · {recommandation}",
-            })
-            st.success(f"✅ Décision enregistrée — {decision_label}")
-        except Exception as e:
-            detail = None
-            resp = getattr(e, "response", None)
-            if resp is not None:
-                try:
-                    detail = resp.json().get("message")
-                except Exception:
-                    detail = resp.text[:300] if resp.text else None
-            st.error(f"❌ Erreur lors de l'enregistrement : {detail or e}")
-            with st.expander("🔍 Détail technique (debug)"):
-                st.write("Type d'exception :", type(e).__name__)
-                st.write("A un attribut .response ?", resp is not None)
-                if resp is not None:
-                    st.write("Code HTTP :", getattr(resp, "status_code", "?"))
-                    st.code(getattr(resp, "text", "(vide)"), language="json")
-                else:
-                    st.code(repr(e))
+    # La décision est enregistrée via « VALIDER LA RECOMMANDATION » ci-dessus
+    # (création de l'intervention planifiée pour Lionel) — plus de base « décisions » séparée.
 
     st.markdown("---")
     if st.button("▶️ Lancer l'analyse d'impact IA", use_container_width=True, type="primary"):
