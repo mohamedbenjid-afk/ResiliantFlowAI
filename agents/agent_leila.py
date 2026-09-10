@@ -357,7 +357,7 @@ def run_agent_leila(c_temp: float, c_vib: float, c_pres: float, c_rul: int) -> s
         f"- Température : {c_temp:.1f}°C\n"
         f"- Vibration   : {c_vib:.2f} mm/s\n"
         f"- Pression    : {c_pres:.1f} bar\n"
-        f"- RUL estimé  : {c_rul}h\n\n"
+        f"- RUL estimé  : {c_rul}j\n\n"
         f"Réalise l'évaluation HSE complète : matrice de risques, EPI requis, "
         f"conformité LOTO, traçabilité pièces et génère le dossier d'audit ISO 45001."
     )
