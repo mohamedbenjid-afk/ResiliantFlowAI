@@ -316,8 +316,19 @@ with tab1:
                                 "V-17A/V-17B, purger PT-17, remplacer le roulement, vérifier "
                                 "débit 45 m³/h et vibration < 1.5 mm/s."),
             })
+            # Arme la demande urgente côté Lionel (pop-up + mise en avant + statut HSE)
+            st.session_state["p17_demande_urgente"] = {
+                "titre":   "Intervention prescriptive P-17 (roulement 6205-2RS)",
+                "machine": "P-17",
+                "piece":   "Roulement 6205-2RS (casier B-07)",
+                "fenetre": _reco_when,
+            }
+            st.session_state["p17_intervention_etat"] = "nouvelle"
+            st.session_state["p17_hse_autorisee"] = False
+            for _k in ("_popup_demande_vue", "p17_etapes_cochees", "mes_interventions"):
+                st.session_state.pop(_k, None)
             st.success(f"✅ Recommandation validée — mission transmise à Lionel ({_reco_when}). "
-                       "Elle apparaît dans son onglet « ☀️ Ma journée ».")
+                       "Elle apparaît dans son onglet « ☀️ Ma journée » (demande urgente).")
             try:
                 from notify import envoyer_bon_de_travail
                 envoyer_bon_de_travail("P-17", "Intervention prescriptive (roulement 6205-2RS)",

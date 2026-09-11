@@ -151,6 +151,18 @@ _FALLBACK_INTERV = [
      "habilitations": ["Mécanique"], "description": "Graissage périodique des paliers + contrôle courroie."},
 ]
 
+# Étapes de l'intervention corrective P-17 (checklist guidée + envoi lunettes G2)
+P17_STEPS = [
+    "Consigner (LOTO) : ouvrir le disjoncteur Q-17A",
+    "Isoler : fermer les vannes V-17A (amont) et V-17B (aval)",
+    "Purger le carter via le point PT-17",
+    "Remplacer le roulement 6205-2RS (kit casier B-07)",
+    "Graisser Mobilux EP2 — couple carter 45 N·m",
+    "Redémarrer, vérifier débit 45 m³/h et vibration < 1.5 mm/s",
+]
+
+_HAS_DIALOG = hasattr(st, "dialog")
+
 
 def _charger_mes_interventions():
     try:
@@ -213,6 +225,68 @@ def _hab_ok(interv, mes_hab):
 with tab_jour:
     st.subheader("☀️ Ma journée — Lionel · " + datetime.date.today().strftime("%d/%m/%Y"))
     st.caption("Ton poste de travail : ta charge du jour, tes interventions, la consigne de l'agent, ton compte-rendu.")
+
+    # ── 🚨 Demande d'intervention urgente (envoyée par Sophie) ────────────────
+    _demande = st.session_state.get("p17_demande_urgente")
+    _etat = st.session_state.get("p17_intervention_etat", "nouvelle")
+    if _demande and _etat != "cloturee":
+        _hse = bool(st.session_state.get("p17_hse_autorisee"))
+        _statut_txt = ("✅ Autorisée par la HSE — prête à démarrer" if _hse
+                       else "⏳ En attente de validation HSE (Leila)")
+
+        if _HAS_DIALOG and not st.session_state.get("_popup_demande_vue"):
+            @st.dialog("🚨 Demande d'intervention urgente")
+            def _popup_demande():
+                st.markdown(f"**{_demande.get('titre','')}**")
+                st.caption(f"Envoyée par Sophie · {_demande.get('machine','P-17')} · fenêtre {_demande.get('fenetre','')}")
+                st.markdown(f"🔩 Pièce : {_demande.get('piece','')}")
+                st.markdown(f"**Statut : {_statut_txt}**")
+                if st.button("Voir la demande dans mon espace", use_container_width=True, type="primary"):
+                    st.session_state["_popup_demande_vue"] = True
+                    st.rerun()
+            _popup_demande()
+
+        _bg = "#dcfce7" if _hse else "#fef3c7"
+        st.markdown(
+            f'<div style="background:{_bg};border-left:6px solid #d4af37;border-radius:10px;'
+            f'padding:16px 18px;margin-bottom:10px;">'
+            f'<div style="font-size:1.15rem;font-weight:800;color:#7c2d12;">🚨 Demande d\'intervention urgente — envoyée par Sophie</div>'
+            f'<div style="margin-top:4px;color:#1e293b;">{_demande.get("titre","")} · {_demande.get("machine","P-17")} · {_demande.get("piece","")}</div>'
+            f'<div style="margin-top:8px;font-weight:700;color:#1e293b;">Statut : {_statut_txt}</div>'
+            f'</div>', unsafe_allow_html=True)
+
+        if _etat == "nouvelle":
+            if st.button("✅ Accepter l'intervention", type="primary", use_container_width=True, key="accept_urgent"):
+                st.session_state["p17_intervention_etat"] = "acceptee"
+                st.rerun()
+        elif _etat == "acceptee":
+            if not _hse:
+                st.info("Tu pourras démarrer dès que Leila (HSE) a autorisé l'intervention.")
+            if st.button("▶️ Démarrer l'intervention", type="primary", use_container_width=True,
+                         disabled=not _hse, key="start_urgent"):
+                st.session_state["p17_intervention_etat"] = "en_cours"
+                st.session_state.setdefault("p17_etapes_cochees", {})
+                try:  # Étage 2 : pousser les étapes sur les lunettes G2 (local uniquement)
+                    import requests as _rq
+                    _rq.post("http://localhost:8000/api/intervention/start",
+                             json={"titre": _demande.get("titre", ""), "steps": P17_STEPS}, timeout=1.5)
+                except Exception:
+                    pass
+                st.rerun()
+        elif _etat == "en_cours":
+            st.markdown("#### 🔧 Étapes de l'intervention — coche au fur et à mesure")
+            st.caption("Sur le terrain, tu peux aussi cocher depuis les lunettes G2 (bague R1).")
+            _cochees = st.session_state.setdefault("p17_etapes_cochees", {})
+            for _i, _s in enumerate(P17_STEPS):
+                _cochees[_i] = st.checkbox(f"{_i+1}. {_s}", value=_cochees.get(_i, False), key=f"p17step_{_i}")
+            _done = sum(1 for v in _cochees.values() if v)
+            st.progress(_done / len(P17_STEPS), text=f"{_done}/{len(P17_STEPS)} étapes réalisées")
+            if st.button("🏁 Terminer l'intervention", type="primary", use_container_width=True, key="finish_urgent"):
+                st.session_state["p17_intervention_etat"] = "terminee"
+                st.rerun()
+        elif _etat == "terminee":
+            st.success("✅ Intervention terminée — rapport prêt dans l'onglet **✅ K3 — Post-intervention** (Valider → mail à Sophie).")
+        st.divider()
 
     if "mes_interventions" not in st.session_state:
         st.session_state["mes_interventions"] = _charger_mes_interventions()
@@ -1166,6 +1240,58 @@ if tab2 is not None:
 if tab3 is not None:
   with tab3:
     st.markdown("## 📝 Rapport post-intervention")
+
+    # ── Rapport auto-rempli de l'intervention urgente terminée ───────────────
+    if st.session_state.get("p17_intervention_etat") in ("terminee", "cloturee"):
+        _dem = st.session_state.get("p17_demande_urgente", {})
+        _cochees = st.session_state.get("p17_etapes_cochees", {})
+        _faites = [P17_STEPS[i] for i in range(len(P17_STEPS)) if _cochees.get(i)]
+        _non = [P17_STEPS[i] for i in range(len(P17_STEPS)) if not _cochees.get(i)]
+        with st.container(border=True):
+            st.markdown(f"### 🧾 Rapport — {_dem.get('titre','Intervention P-17')}")
+            st.caption(f"{_dem.get('machine','P-17')} · terminée le "
+                       + datetime.date.today().strftime("%d/%m/%Y")
+                       + f" · {len(_faites)}/{len(P17_STEPS)} étapes réalisées")
+            st.markdown("**✅ Actions réalisées :**")
+            for _s in _faites:
+                st.markdown(f"- {_s}")
+            if _non:
+                st.markdown("**⚠️ Non fait / à signaler :**")
+                for _s in _non:
+                    st.markdown(f"- {_s}")
+            _comm = st.text_area(
+                "Commentaire terrain", key="k3_commentaire_urgent",
+                value="Contrôles de remise en service OK (débit 45 m³/h, vibration < 1.5 mm/s).")
+            _ok = st.checkbox("Contrôles OK après remise en service", value=True, key="k3_controls_urgent")
+            if st.session_state.get("p17_intervention_etat") == "cloturee":
+                st.success("✅ Rapport déjà validé et envoyé à Sophie.")
+            elif st.button("✅ Valider et envoyer le rapport à Sophie",
+                           type="primary", use_container_width=True, key="k3_valider_urgent"):
+                _recap = ("Rapport intervention " + _dem.get("titre", "P-17") + "\n"
+                          + "Réalisées : " + "; ".join(_faites) + "\n"
+                          + (("Non fait : " + "; ".join(_non) + "\n") if _non else "")
+                          + "Contrôles : " + ("OK" if _ok else "à revoir") + "\n"
+                          + "Commentaire : " + _comm)
+                try:
+                    nc.create_intervention({
+                        "titre": "CR — " + _dem.get("titre", "Intervention P-17"),
+                        "machine": _dem.get("machine", "P-17"), "type": "Corrective",
+                        "statut": "Réalisée" if not _non else "En cours",
+                        "technicien": "Lionel", "composants": _dem.get("piece", ""),
+                        "description": _comm, "resultat": _recap[:1900],
+                    })
+                except Exception:
+                    pass
+                try:
+                    from notify import envoyer_bon_de_travail
+                    envoyer_bon_de_travail(_dem.get("machine", "P-17"), _dem.get("titre", ""),
+                                           "Réalisée" if not _non else "En cours", int(c_rul), _recap)
+                    st.success("✅ Rapport validé — envoyé par mail à Sophie et tracé dans Notion.")
+                except Exception as _e:
+                    st.warning("Rapport tracé. Mail non envoyé : " + str(_e)[:100])
+                st.session_state["p17_intervention_etat"] = "cloturee"
+                st.rerun()
+        st.divider()
 
     if st.session_state.get("k3_submitted"):
         # ── Confirmation post-soumission ─────────────────────────────────────
